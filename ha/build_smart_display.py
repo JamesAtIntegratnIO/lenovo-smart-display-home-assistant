@@ -235,13 +235,13 @@ music = {
 }
 
 # ---------------------------------------------------------------- Screen saver
-# Full-screen photo slideshow. Not in the navigation row: the "Smart Display - Screen saver"
+# Full-screen photo slideshow with a clock (a dim clock alone when the room is dark). Not in the navigation row: the "Smart Display - Screen saver"
 # automation (ha/screen_saver.py) opens it when nobody is there. The card is ha/frontend/kitchen_saver.js.
 saver = {
     "title": "Screen saver", "path": "saver", "icon": "mdi:image-multiple", "type": "panel",
     "cards": [{"type": "custom:kitchen-saver-card", "interval": 20, "fade": 2, "device": "sensor.den_display",
-               # stop changing pictures while the backlight is off
-               "pause_entity": "number.vaca_ha0000xx_screen_brightness"}],
+               # room dark: a dim clock on black instead of the pictures
+               "dark_entity": "input_boolean.kitchen_display_dark"}],
 }
 
 views = [home, lights, cameras, outside, music, media, sports]

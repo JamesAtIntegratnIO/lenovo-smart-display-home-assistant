@@ -44,7 +44,7 @@ and says what it does rather than repeating it.
 15. [AI conversation agent](#15-ai-conversation-agent)
 16. [Physical volume buttons](#16-physical-volume-buttons)
 17. [Screen brightness](#17-screen-brightness)
-- 17a. [Screen saver: presence, slideshow, dark](#17a-screen-saver-presence-slideshow-dark)
+- 17a. [Screen saver: presence, slideshow, dark clock](#17a-screen-saver-presence-slideshow-dark-clock)
 18. [Problems hit and how each was diagnosed](#18-problems-hit-and-how-each-was-diagnosed)
 19. [Verification checklist](#19-verification-checklist)
 20. [Going back](#20-going-back)
@@ -962,29 +962,83 @@ display reacts (2 s to brighten, 4 s to dim, fixed in the firmware).
 
 ---
 
-## 17a. Screen saver: presence, slideshow, dark
+## 17a. Screen saver: presence, slideshow, dark clock
 
-The dashboard is static, so the panel needs protecting. Added 2026-10-10.
+The dashboard is static, so the panel needs protecting. Added 2026-10-10. The screen is
+never turned off; it shows something that moves instead.
 
-| When | What the display does |
+| When | What the display shows |
 |---|---|
-| nobody there for `SAVER_MINUTES` (5) | full-screen photo slideshow with a small clock |
-| slideshow up for `OFF_MINUTES` (30), still nobody | dims to `DIM_BRIGHTNESS` (5%) for `DIM_SECONDS` (60), then backlight off |
-| touch, wake word, volume rocker, camera sees someone | backlight back, and the view it was on before |
-| camera takeover, ringing timer, a voice request that opens a view | that view wins; the saver restores the backlight and stands down |
+| nobody there for `SAVER_MINUTES` (5), room bright | full-screen photo slideshow with a clock over it |
+| nobody there for 5 minutes, room dark | a dim clock on black that drifts to a new spot every minute |
+| touch, wake word, volume rocker, camera sees someone | the view it was on before |
+| camera takeover, ringing timer, a voice request that opens a view | that view wins; the saver stands down |
 
-The four values are constants at the top of `ha/screen_saver.py`.
+Settings are constants at the top of `ha/screen_saver.py`: `SAVER_MINUTES` 5, `DARK_LUX` 3,
+`BRIGHT_LUX` 8, `LUX_STALE_MINUTES` 15, `SUN_DARK_DEGREES` -4, `MOTION_MODE` "motion".
 
 **What View Assist and VACA already offer, and why it was not enough.** View Assist can
 rotate the *background* of its own views (clock, weather) from a folder or an entity; it
 does not cover a custom dashboard and has no idle logic. VACA has a "Screen saver" switch
 (a black overlay that a tap clears), a "Screen" switch and a "Screen timeout". On this
 device the last two do not turn the panel off (VACA logs "Simulating screen off via timeout
-and black overlay", and a tap does not clear that one). So the slideshow is a small custom
+and black overlay", and a tap does not clear that one). So the saver is a small custom
 card, and Home Assistant decides when to show it.
 
-**17a.1 Let VACA move the backlight.** Out of the box VACA's brightness and auto-brightness
-entities change nothing on this firmware: the app is not allowed to write system settings.
+**17a.1 Presence: make the camera usable.** VACA has camera detection built in
+(`select.…_motion_detection` none/motion/face, `binary_sensor.…_motion`,
+`number.…_motion_detection_sensitivity`), which is the lightest route since no extra process
+runs. On this firmware it fails at start:
+
+```
+CameraValidator: Camera LENS_FACING_FRONT verification failed
+CameraX: No available camera can be found. Cams:0 … LensFilter:0
+```
+
+`adb shell dumpsys media.camera` shows why: one camera, HAL v1.0, `Facing: Back`, while the
+feature list claims both a back and a front camera. VACA asks CameraX for a front camera.
+Two changes fix it. Keep copies of both files first (`downloads/backup/`).
+
+1. The facing comes from the camera's static metadata, built by
+   `constructCustStaticMetadata_DEVICE_CAMERA_COMMON` in `/vendor/lib/libcam.metadataprovider.so`.
+   For camera 0 it stores facing 1 (back; 0 is front). In the build with SHA-256
+   `6ba9ca58…d612ac83` that is the Thumb instruction `movs r0, #1` (bytes `01 20`) at file
+   offset `0x4dc6`. Change the first byte to `00`:
+
+   ```bash
+   adb pull /vendor/lib/libcam.metadataprovider.so work/camhal/
+   python3 - <<'PY'
+   import pathlib
+   b = bytearray(pathlib.Path("work/camhal/libcam.metadataprovider.so").read_bytes())
+   assert b[0x4dc6:0x4dc8] == bytes.fromhex("0120")     # stop if this is a different build
+   b[0x4dc6] = 0
+   pathlib.Path("work/camhal/libcam.metadataprovider.front.so").write_bytes(b)
+   PY
+   adb remount
+   adb push work/camhal/libcam.metadataprovider.front.so /vendor/lib/libcam.metadataprovider.so
+   adb shell 'chmod 644 /vendor/lib/libcam.metadataprovider.so; sync'
+   adb shell 'stop cameraserver; stop camerahalserver; start camerahalserver; start cameraserver'
+   adb shell dumpsys media.camera | grep Facing        # Facing: Front
+   ```
+
+2. Remove the line `<feature name="android.hardware.camera" />` (the back camera) from
+   `/vendor/etc/permissions/android.hardware.camera.xml`, leaving `camera.front` and
+   `camera.any`, so CameraX expects one camera rather than two. Reboot.
+
+After the reboot `ha/screen_saver.py` (or the select entity) turns detection on, and the
+binary sensor follows people in front of the display: on for 10 seconds per motion event.
+
+Cost, measured: VACA goes from about 12% to about 75% of one core and the camera service
+adds about 15% (the preview runs at 800x600). Total idle stays near 290 of 400%, and gateway
+ping stays in the tens of milliseconds, unlike openWakeWord. "face" mode was not measured.
+
+Dead end worth knowing: `NSCamCustomSensor::getSensorFacingDirection` in
+`libcameracustom.so` looks like the place (a table of back, front, back) but changing it
+does not change what Android reports. That file is back to the original.
+
+**17a.2 Let auto-brightness and VACA move the backlight.** Out of the box VACA's brightness
+and auto-brightness entities change nothing on this firmware: the app is not allowed to
+write system settings.
 
 ```bash
 adb shell appops set com.msp1974.vacompanion WRITE_SETTINGS allow
@@ -992,59 +1046,99 @@ adb shell cat /sys/class/leds/lcd-backlight/brightness     # read the backlight,
 ```
 
 After that, `switch.…_auto_brightness` off plus `number.…_screen_brightness` at 10, 1, 0 gave
-backlight 25, 2, 0, and turning auto-brightness back on restored about 141. Brightness 0 is
-the backlight fully off while Android stays awake, so the wake word and touch still work.
+backlight 25, 2, 0, and turning auto-brightness back on restored about 141. The setting
+survives a reboot. The saver leaves brightness on automatic: by the curve in step 17 a dark
+room gives a backlight of about 20 of 255, which with grey text is the dark clock's dimness.
 
-**17a.2 Photos.** `$AVB_PYTHON ha/photo_album.py` (needs SSH to Home Assistant):
+**17a.3 Room light.** The display has an ambient light sensor (VCNL4200) that drives
+auto-brightness, but it is an Android Things "dynamic" sensor and VACA does not see it.
+Android's own smoothed reading is in `dumpsys display` (`mAmbientLux`, 0.05 s to read).
+`device/lightsense.sh` reads it every 15 seconds and posts it to the local-only webhook
+`kitchen_display_lux` when it changes by more than a quarter, and every 5 minutes regardless;
+`device/lightsense.rc` starts it at boot, exactly like the volume watcher in step 16:
+
+```bash
+adb remount
+adb push device/lightsense.sh /system/bin/lightsense.sh
+adb push device/lightsense.rc /system/etc/init/lightsense.rc
+adb shell 'chmod 755 /system/bin/lightsense.sh; chmod 644 /system/etc/init/lightsense.rc; sync'
+adb reboot
+```
+
+In Home Assistant, "Smart Display - Light level" keeps `input_boolean.kitchen_display_dark`
+in step: on below 3 lx, off above 8 lx, unchanged in between so it cannot flap. If no
+reading has arrived for 15 minutes it uses the sun instead (dark when more than 4 degrees
+below the horizon). **On this build the reporter is not installed yet, so it is running on
+the sun.** The thresholds were checked by posting readings to the webhook by hand:
+
+```bash
+curl -X POST -H 'Content-Type: application/json' -d '{"lux": 1}' http://10.0.1.174:8123/api/webhook/kitchen_display_lux
+```
+
+**17a.4 Photos.** `$AVB_PYTHON ha/photo_album.py` (needs SSH to Home Assistant):
 
 - creates `input_text.kitchen_display_album_url`. **This is the one setting**: paste a shared
   Google Photos album link (album > Share > Create link) into the helper "Kitchen display
-  photo album link", or set `ALBUM_URL` in the script and rerun. The helper only accepts
-  `https://photos.app.goo.gl/…` or `https://photos.google.com/…`. Empty means placeholder
-  photos from picsum.photos;
+  photo album link". It lives only in Home Assistant; do not put a real link in the script
+  if the script goes into a public repository. Empty, or anything that is not a
+  `photos.app.goo.gl` or `photos.google.com` link, means placeholder photos from picsum.photos;
 - copies `ha/album_sync.py` to `/config/kitchen_display/` and writes
   `/config/packages/kitchen_display.yaml`, a command-line sensor
   (`sensor.kitchen_display_album`, state = number of photos, attributes `source`, `updated`,
   `error`) that runs the sync every 6 hours. `configuration.yaml` needs
   `homeassistant: packages: !include_dir_named packages`, and Home Assistant needs one
-  restart the first time (check the config first);
+  restart the first time (check the config first; later changes take `command_line.reload`);
 - creates "Smart Display - Refresh photo album", which syncs at once when the link changes.
 
 Google's Photos Library API no longer lists albums an app did not create, so the sync reads
 the public share page, which carries each picture's `lh3.googleusercontent.com/pw/…` address
-and size, and downloads each one once at 1024 px into `/config/www/kitchen_display/`
-(at most 200, about 100 KB each). The display loads them from Home Assistant at
-`/local/kitchen_display/`, so it needs no internet access. Pictures removed from the album
-are deleted on the next sync; if the album cannot be read, the copies already there stay.
+and size, and downloads each one once at 1024 px into `/config/www/kitchen_display/`. The
+display loads them from Home Assistant at `/local/kitchen_display/`, so it needs no internet
+access. Pictures removed from the album are deleted on the next sync; if the album cannot
+be read, the copies already there stay. With a real album of 302 pictures the page listed
+all 302; the sync keeps the first 300 (`MAX_PHOTOS`), about 45 MB, and the first run took
+under three minutes.
 
 Two things to know. `/local/` is served **without login** to anything that can reach Home
 Assistant on port 8123, so anyone on the home network who knows the address can fetch these
-pictures. And the share page lists roughly the first 300 items of an album; a bigger album
-is not fully covered.
+pictures. And a share page lists only the first few hundred items of an album.
 
-**17a.3 The view and the card.** `ha/build_smart_display.py` adds a panel view `saver` that
+**Gotcha.** A `pattern` on the `input_text` helper (to restrict it to share links) left the
+helper `unavailable` after a Home Assistant restart. The check is in the sensor's command
+template instead, which is also the right place for it: the link is passed to a shell.
+
+**17a.5 The view and the card.** `ha/build_smart_display.py` adds a panel view `saver` that
 is not in the navigation row; rebuild and save the dashboard as in step 11. Its one card,
-`custom:kitchen-saver-card`, is `ha/frontend/kitchen_saver.js`: two stacked images that
-crossfade every 20 seconds (only opacity is animated, which this GPU handles), landscape
-pictures filling the screen and portrait ones fitted on black, and a clock that jumps to
-another corner with every picture. The same file reports touches on every view of the
-display (user agent check, at most one report per 20 seconds).
+`custom:kitchen-saver-card`, is `ha/frontend/kitchen_saver.js`, with two faces chosen by
+`dark_entity`:
 
-**17a.4 The automations.** `$AVB_PYTHON ha/screen_saver.py` registers the card as a
-dashboard resource (a `data:` URL, like the HLS guard), creates two helpers and two automations:
+- bright: two stacked images that crossfade every 20 seconds (only opacity is animated,
+  which this GPU handles), landscape pictures filling the screen and portrait ones fitted
+  on black; over them the time and date in white with a soft dark halo so they read on any
+  picture, jumping to another corner with every picture;
+- dark: no pictures, the time at 150 px in dim grey on black, gliding to a random new
+  position once a minute.
+
+The same file reports touches on every view of the display (user agent check, at most one
+report per 20 seconds).
+
+**17a.6 The automations.** `$AVB_PYTHON ha/screen_saver.py` registers the card as a
+dashboard resource (a `data:` URL, like the HLS guard), creates the helpers and three automations:
 
 - **Smart Display - Activity** presses `input_button.kitchen_display_activity` when the
   camera sees motion, the voice satellite changes state, the volume changes, or the display
   changes view (except to the saver). The card presses the same button on touch. "Idle" is
-  then one question: how long since that button was pressed.
+  then one question: how long since that button was pressed. While the room is dark the
+  camera is ignored, because noise in a dark picture reads as motion and would light the
+  dashboard up at night; touch and voice still count.
 - **Smart Display - Screen saver** starts when the button has been quiet for 5 minutes, the
   camera sees nobody, the satellite is idle, View Assist is in its normal mode and no camera
   takeover is showing. It remembers the current view in
   `input_text.kitchen_display_saver_return`, opens the saver with
   `view_assist.navigate … revert_timeout: 0` (so View Assist's 20 second view timeout leaves
-  it alone, with no mode change), then waits for the button or for the view to change.
-  After 30 minutes it dims, a minute later it sets brightness 0. On wake it restores the
-  backlight first and navigates back only if the display is still on the saver.
+  it alone, with no mode change), then waits for the button or for the view to change, and
+  navigates back only if the display is still on the saver.
+- **Smart Display - Light level**, described in 17a.3.
 
 Things that had to be handled:
 
@@ -1053,41 +1147,16 @@ Things that had to be handled:
   picks a showing saver up again (template trigger) and re-sends the navigation with
   `revert_timeout: 0`, which cancels that. The return view is not overwritten.
 - **Reloading the automation or restarting Home Assistant kills a running saver.** The same
-  pick-up trigger, plus one on Home Assistant start, resumes it; the first thing a run does
-  is make the backlight visible again. If a touch arrives while nothing is listening, the
-  card asks View Assist to go home itself after 4 seconds.
-- **VACA's own black "Screen saver" overlay holds the backlight at 2 of 255**, so it is not
-  used for the dark stage.
+  pick-up trigger, plus one on Home Assistant start, resumes it. If a touch arrives while
+  nothing is listening, the card asks View Assist to go home itself after 4 seconds.
 
-Measured on the display: the slideshow costs the same as the Home view (about 60% of 400%
-CPU in total, WebView renderer about 25%). Test with short timings by editing the constants,
-and watch `/sys/class/leds/lcd-backlight/brightness`.
+Measured on the display: the saver costs the same as the Home view (WebView renderer about
+25% of one core). To test, set `SAVER_MINUTES` to 1 and run the script; force the dark face
+with the webhook above; `adb shell input tap 500 300` is a touch.
 
-**17a.5 Presence by camera: not working yet.** VACA has it built in
-(`select.…_motion_detection` none/motion/face, `binary_sensor.…_motion`,
-`number.…_motion_detection_sensitivity`), which is the lightest option since no extra
-process runs. `ha/screen_saver.py` turns it on (`MOTION_MODE`). On this firmware it fails
-at start:
-
-```
-CameraValidator: Camera LENS_FACING_FRONT verification failed
-CameraX: No available camera can be found. Cams:0 … LensFilter:0
-```
-
-`adb shell dumpsys media.camera` shows why: one camera, HAL v1.0, `Facing: Back`. VACA asks
-for a front camera. The facing comes from a three-entry table in
-`/vendor/lib/libcameracustom.so` (`NSCamCustomSensor::getSensorFacingDirection`, file offset
-`0xbd588` in the build with SHA-256 `45363a61…20f2a3`; entry 0 is `00` = back). The intended
-fix, **not applied yet**, is to change that byte to `01`, remove the
-`android.hardware.camera` (back camera) feature line from
-`/vendor/etc/permissions/android.hardware.camera.xml` so CameraX expects one camera instead
-of two, and reboot. Keep copies of both files first. Until then the binary sensor stays
-`off` and the saver runs on touch, voice and the volume rocker alone, which means it will
-start while someone is standing in the kitchen without touching the display.
-
-Also present and unused: a VCNL4200 ambient light and proximity sensor
-(`dumpsys sensorservice`). VACA does not see it because Android Things registers it as a
-dynamic sensor.
+An earlier version dimmed and then switched the backlight off after 30 minutes
+(brightness 0 through VACA is backlight off with Android awake, and a touch still lands on
+the page). It worked, but a dark clock was preferred to a dead screen.
 
 ---
 
@@ -1116,7 +1185,8 @@ dynamic sensor.
 | Rocker not loud enough | Android media stream was at 40 of 100 underneath the player's volume | Drive the stream itself | `dumpsys audio` |
 | Rocker steps uneven | Android's volume curve | 3 dB table | `dumpsys media.audio_policy` |
 | AI retracted real actions | Local replies look like unbacked claims to it; it had no music tool | Prompt and a music script | Screenshot of its reply |
-| VACA motion detection never reports | Camera HAL says the only camera faces back; VACA wants a front camera | Pending: one-byte HAL patch, step 17a.5 | `logcat` CameraX lines; `dumpsys media.camera` |
+| VACA motion detection never reports | Camera HAL says the only camera faces back; VACA wants a front camera | One-byte patch to the camera's static metadata and a feature-file edit, step 17a.1 | `logcat` CameraX lines; `dumpsys media.camera` |
+| Album link helper `unavailable` after a restart | It had a `pattern` | Recreate without it; check the link in the command template | Entity state showed `restored: true` |
 | VACA brightness entities do nothing | App may not write system settings | `appops set … WRITE_SETTINGS allow` | Backlight sysfs value did not move; `appops get` showed a reject |
 | Saver went home 20 s after a camera takeover handed back | The takeover navigates with the normal view timeout | Saver re-sends its navigation with `revert_timeout: 0` | `current_path` history |
 | Screen flipped to portrait | The orientation had been forced by the earlier kiosk app | VACA orientation = landscape | Screenshot was 600x1024 |
@@ -1161,10 +1231,10 @@ Then simulate a detection as in step 11 ("Camera on detection or doorbell"): the
 should fill the screen within a second or two and the previous view come back about 30
 seconds after the sensor is set to off.
 
-Screen saver: set `SAVER_MINUTES`, `OFF_MINUTES` and `DIM_SECONDS` in `ha/screen_saver.py`
-to 1, 1 and 15, run it, and leave the display alone: slideshow after a minute, backlight 12
-a minute later, 0 after 15 more seconds. `adb shell input tap 500 300` brings back 141 or
-so and the previous view. Put the values back and run the script again.
+Screen saver: `adb shell dumpsys media.camera | grep Facing` says Front and
+`binary_sensor.…_motion` turns on when you wave at the display. Leave it alone for five
+minutes: slideshow with a clock (or the dark clock at night). `adb shell input tap 500 300`
+brings back the previous view.
 
 Then by voice at the display: "Okay Nabu, set a timer for one minute", "Okay Nabu, play
 some Fleetwood Mac", and press the rocker.
@@ -1189,10 +1259,12 @@ setting in step 17.
   Reload Protect when a camera drops" automation, and run `ha/hls_guard.py remove`.
 - **Remove the screen saver:** `$AVB_PYTHON ha/screen_saver.py remove` (automations, card
   resource, camera detection off), delete the `saver` view from `ha/build_smart_display.py`
-  and rebuild, delete the three `kitchen_display` helpers and the "Refresh photo album"
+  and rebuild, delete the `kitchen_display` helpers and the "Refresh photo album"
   automation, and on Home Assistant delete `/config/packages/kitchen_display.yaml`,
   `/config/kitchen_display/` and `/config/www/kitchen_display/`, then restart it.
-  `adb shell appops set com.msp1974.vacompanion WRITE_SETTINGS default` undoes step 17a.1.
+  On the display: push the two originals from `downloads/backup/` back to `/vendor`
+  (step 17a.1), delete `/system/bin/lightsense.sh` and `/system/etc/init/lightsense.rc`,
+  and `adb shell appops set com.msp1974.vacompanion WRITE_SETTINGS default`.
 - **Remove the button watcher:** delete `/system/bin/volkeys.sh` and
   `/system/etc/init/volkeys.rc`, and the "Smart Display - Volume buttons" automation.
 - **Stock firmware:** flash the user build to the active slot and relock AVB with

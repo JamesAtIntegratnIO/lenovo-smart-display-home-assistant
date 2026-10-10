@@ -19,7 +19,7 @@ import datetime, hashlib, json, os, pathlib, re, sys, urllib.parse, urllib.reque
 
 OUT = pathlib.Path(os.environ.get("ALBUM_OUT", "/config/www/kitchen_display"))
 WEB = "/local/kitchen_display"
-MAX_PHOTOS = 200
+MAX_PHOTOS = 300
 SIZE = "=w1024-h1024"       # longest side 1024: enough for a 1024x600 screen
 MIN_SIDE = 400              # skips avatars and icons that share the page
 PLACEHOLDERS = 12

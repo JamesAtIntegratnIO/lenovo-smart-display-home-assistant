@@ -6,7 +6,7 @@ the helper "Kitchen display photo album link" in Home Assistant (Settings > Devi
 services > Helpers). While it is empty the slideshow shows placeholder photos.
 
 What this does (repeatable):
-  1. creates input_text.kitchen_display_album_url, which only accepts a Google Photos share link;
+  1. creates input_text.kitchen_display_album_url (anything but a Google Photos share link counts as empty);
   2. copies ha/album_sync.py to /config/kitchen_display/ on Home Assistant over SSH;
   3. writes /config/packages/kitchen_display.yaml: a command_line sensor
      (sensor.kitchen_display_album, state = number of photos) that runs the sync every
@@ -24,8 +24,10 @@ REFRESH_HOURS = 6
 HA_SSH = os.environ.get("HA_SSH", "root@10.0.1.174")
 HELPER = "input_text.kitchen_display_album_url"
 SENSOR = "sensor.kitchen_display_album"
-# The link is passed to a shell command, so the helper refuses anything that is not a plain share link.
-PATTERN = r"^(https://(photos\.app\.goo\.gl|photos\.google\.com)/[A-Za-z0-9/_?=&.\-]+)?$"
+# The link is passed to a shell command, so the command only ever gets a plain share link;
+# anything else in the helper counts as empty. (A `pattern` on the helper itself left it
+# unavailable after a Home Assistant restart, so the check lives in the command.)
+SHARE_LINK = r"^https://(photos\.app\.goo\.gl|photos\.google\.com)/[A-Za-z0-9/_?=&.-]+$"
 
 PACKAGE = f"""# Written by ha/photo_album.py (lenovo-smart-display). Photo source for the kitchen display's screen saver.
 command_line:
@@ -34,7 +36,8 @@ command_line:
       unique_id: kitchen_display_album
       icon: mdi:image-multiple
       command: >-
-        python3 /config/kitchen_display/album_sync.py "{{{{ states('{HELPER}') }}}}"
+        python3 /config/kitchen_display/album_sync.py
+        "{{% set u = states('{HELPER}') %}}{{{{ u if u is match('{SHARE_LINK}') else '' }}}}"
       command_timeout: 600
       scan_interval: {REFRESH_HOURS * 3600}
       value_template: "{{{{ value_json.count }}}}"
@@ -60,10 +63,9 @@ def ws(msg):
 
 
 if '"http_error"' in ha("GET", f"/api/states/{HELPER}"):
-    print(ws({"type": "input_text/create", "name": "Kitchen display album url", "max": 255,
-              "icon": "mdi:image-album", "pattern": PATTERN}))
+    print(ws({"type": "input_text/create", "name": "Kitchen display album url", "max": 255, "icon": "mdi:image-album"}))
     print(ws({"type": "input_text/update", "input_text_id": "kitchen_display_album_url",
-              "name": "Kitchen display photo album link", "max": 255, "icon": "mdi:image-album", "pattern": PATTERN}))
+              "name": "Kitchen display photo album link", "max": 255, "icon": "mdi:image-album"}))
 if ALBUM_URL:
     print(ha("POST", "/api/services/input_text/set_value", {"entity_id": HELPER, "value": ALBUM_URL}))
 

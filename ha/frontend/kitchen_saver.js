@@ -1,13 +1,15 @@
-// Screen saver for the Lenovo Smart Display: a full-screen photo slideshow with a small clock.
-// Registered as a dashboard resource by ha/screen_saver.py and used by the "saver" view of
-// the smart-display dashboard. Home Assistant decides when it is shown and when the screen
-// goes dark (the "Smart Display - Screen saver" automation); this file only draws.
+// Screen saver for the Lenovo Smart Display. Registered as a dashboard resource by
+// ha/screen_saver.py and used by the "saver" view of the smart-display dashboard. Home
+// Assistant decides when it is shown (the "Smart Display - Screen saver" automation) and
+// whether the room is dark (dark_entity); this file only draws.
 //
 // Two parts:
-//  1. <kitchen-saver-card>: crossfades the pictures listed in /local/kitchen_display/photos.json
-//     (kept up to date by ha/album_sync.py). The clock moves to another corner with every
-//     picture so it cannot burn in either. A touch presses the activity button, which makes
-//     the automation give the screen back.
+//  1. <kitchen-saver-card>, with two faces:
+//     - room bright: crossfades the pictures listed in /local/kitchen_display/photos.json
+//       (kept up to date by ha/album_sync.py) with a clock over them. The clock moves to
+//       another corner with every picture so it cannot burn in either.
+//     - room dark: no pictures, a dim clock on black that shifts to a new spot every minute.
+//     A touch presses the activity button, which makes the automation give the screen back.
 //  2. On the display only (user agent check): any touch on any view presses the same button,
 //     at most once every 20 seconds, so the automation knows someone is using the screen.
 (() => {
@@ -29,54 +31,87 @@
     }, { capture: true, passive: true });
   }
 
-  const CORNERS = [["4%", "", "", "5%"], ["4%", "5%", "", ""], ["", "5%", "6%", ""], ["", "", "6%", "5%"]]; // top right bottom left
+  const CORNERS = [["4%", "", "", "4%"], ["4%", "4%", "", ""], ["", "4%", "5%", ""], ["", "", "5%", "4%"]]; // top right bottom left
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
   class KitchenSaverCard extends HTMLElement {
     setConfig(config) {
       this.c = Object.assign({ photos: "/local/kitchen_display/photos.json", interval: 20, fade: 2,
-        clock: true, activity: ACTIVITY, pause_entity: null, device: null, home: "/smart-display/home" }, config);
+        clock: true, activity: ACTIVITY, dark_entity: null, device: null, home: "/smart-display/home" }, config);
     }
     set hass(hass) {
       this._hass = hass;
-      const st = this.c.pause_entity && hass.states[this.c.pause_entity];
-      const paused = !!st && (st.state === "on" || Number(st.state) === 0);   // a switch that is on, or a brightness of 0
-      if (paused !== this._paused) { this._paused = paused; if (this.isConnected) this._schedule(paused ? null : 1000); }
+      const st = this.c.dark_entity && hass.states[this.c.dark_entity];
+      const dark = !!st && st.state === "on";
+      if (dark !== this._dark) { this._dark = dark; if (this._wrap) this._face(); }
     }
     getCardSize() { return 10; }
 
     connectedCallback() {
       const root = this.shadowRoot || this.attachShadow({ mode: "open" });
       root.innerHTML = `<style>
-        .wrap { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; touch-action: none; }
+        .wrap { position: fixed; inset: 0; z-index: 9999; background: #000; overflow: hidden; touch-action: none;
+                font-family: Roboto, sans-serif; }
         img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
               transition: opacity ${this.c.fade}s ease-in-out; will-change: opacity; }
         img.tall { object-fit: contain; }
         img.show { opacity: 1; }
-        .clock { position: absolute; font: 300 46px/1 Roboto, sans-serif; color: rgba(255,255,255,.88);
-                 text-shadow: 0 1px 6px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.6); letter-spacing: 1px; }
-      </style><div class="wrap"><img><img><div class="clock"></div></div>`;
+        .dark img { opacity: 0 !important; }
+        /* Clock over a photo: white with a soft dark halo, so it reads on any picture. */
+        .clock { position: absolute; color: #fff; padding: 14px 26px; border-radius: 24px;
+                 background: radial-gradient(closest-side, rgba(0,0,0,.4), rgba(0,0,0,0));
+                 text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.7); }
+        .time { font-weight: 300; font-size: 76px; line-height: 1; letter-spacing: 1px; }
+        .date { font-weight: 400; font-size: 22px; margin-top: 6px; opacity: .92; }
+        /* Clock in a dark room: big, dim, no halo, placed by translate so it can drift. */
+        .dark .clock { top: 50% !important; left: 50% !important; right: auto !important; bottom: auto !important;
+                       background: none; text-shadow: none; color: #6b6f76; text-align: center;
+                       transition: transform 4s ease-in-out; }
+        .dark .time { font-size: 150px; font-weight: 200; }
+        .dark .date { font-size: 28px; color: #4b4f55; }
+      </style><div class="wrap"><img src="${BLANK}" alt=""><img src="${BLANK}" alt=""><div class="clock"><div class="time"></div><div class="date"></div></div></div>`;
+      this._wrap = root.querySelector(".wrap");
       this._imgs = [...root.querySelectorAll("img")];
       this._clock = root.querySelector(".clock");
-      this._front = 0; this._i = 0; this._corner = 0; this._list = [];
+      this._time = root.querySelector(".time");
+      this._date = root.querySelector(".date");
+      this._front = 0; this._i = 0; this._corner = 0; this._list = []; this._minute = -1;
       this._clock.style.display = this.c.clock ? "" : "none";
-      root.querySelector(".wrap").addEventListener("pointerdown", () => this._touched());
+      this._wrap.addEventListener("pointerdown", () => this._touched());
       this._tick();
-      this._clockTimer = setInterval(() => this._tick(), 10000);
+      this._clockTimer = setInterval(() => this._tick(), 5000);
       this._listTimer = setInterval(() => this._load(), 3600000);
-      this._load().then(() => this._next());
+      this._load().then(() => this._face());
     }
     disconnectedCallback() {
       clearInterval(this._clockTimer); clearInterval(this._listTimer); clearTimeout(this._timer); clearTimeout(this._leave);
+      this._wrap = null;
     }
 
     _tick() {
       const d = new Date(), h = d.getHours() % 12 || 12;
-      this._clock.textContent = `${h}:${String(d.getMinutes()).padStart(2, "0")}`;
+      this._time.textContent = `${h}:${String(d.getMinutes()).padStart(2, "0")}`;
+      this._date.textContent = `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+      if (this._dark && d.getMinutes() !== this._minute) { this._minute = d.getMinutes(); this._drift(); }
+    }
+    // Dark face: a new spot each minute, anywhere the clock still fits on the screen.
+    _drift() {
+      const x = Math.round((Math.random() - 0.5) * 2 * 26), y = Math.round((Math.random() - 0.5) * 2 * 28);
+      this._clock.style.transform = `translate(-50%, -50%) translate(${x}vw, ${y}vh)`;
     }
     _moveClock() {
       this._corner = (this._corner + 1 + Math.floor(Math.random() * 3)) % 4;
       const [top, right, bottom, left] = CORNERS[this._corner];
       Object.assign(this._clock.style, { top, right, bottom, left });
+    }
+    // Switch between the two faces.
+    _face() {
+      clearTimeout(this._timer);
+      this._wrap.classList.toggle("dark", !!this._dark);
+      if (this._dark) { this._minute = -1; this._tick(); }
+      else { this._clock.style.transform = ""; this._next(); }
     }
     async _load() {
       try {
@@ -86,19 +121,17 @@
         this._list = list; this._i = 0;
       } catch (e) { /* keep the list we have */ }
     }
-    _schedule(ms) {
-      clearTimeout(this._timer);
-      if (ms !== null) this._timer = setTimeout(() => this._next(), ms);
-    }
     _next() {
-      if (this._paused) return;
+      clearTimeout(this._timer);
+      if (this._dark || !this._wrap) return;
       this._moveClock();
-      const again = () => this._schedule(this.c.interval * 1000);
+      const again = () => { clearTimeout(this._timer); this._timer = setTimeout(() => this._next(), this.c.interval * 1000); };
       if (!this._list.length) { this._load().then(again); return; }
       const photo = this._list[this._i++ % this._list.length];
       const back = this._imgs[1 - this._front], front = this._imgs[this._front];
       const pre = new Image();
       pre.onload = () => {
+        if (this._dark || !this._wrap) return;
         back.src = photo.src;
         back.classList.toggle("tall", photo.h > photo.w);
         back.classList.add("show"); front.classList.remove("show");
