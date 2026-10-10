@@ -73,7 +73,7 @@ def nav_strip(current):
                 "tap_action": {"action": "navigate", "navigation_path": f"/smart-display/{path}"},
                 "grid_options": {"columns": 3, "rows": 1}}
         if path == current:
-            card["card_mod"] = {"style": "ha-card { background: var(--primary-color); --state-inactive-color: white; }"}
+            card["card_mod"] = {"style": "ha-card { background: var(--primary-color); --state-inactive-color: white; --state-icon-color: white; }"}
         cards.append(card)
     return {"type": "grid", "column_span": 2, "cards": cards}
 

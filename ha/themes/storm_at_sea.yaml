@@ -1,0 +1,123 @@
+# Storm at Sea: a dark Home Assistant theme. Deep navy water, slate storm cloud,
+# sea-green accents and lightning-white text. Tuned for the 7" kitchen display
+# (1024x600, read from across the room), so text contrast is kept high:
+# primary text on cards is about 14:1, secondary text about 7:1.
+#
+# Install: copy to /config/themes/ and make sure configuration.yaml has
+#   frontend:
+#     themes: !include_dir_merge_named themes
+# then run the frontend.reload_themes action. ha/install_theme.sh does all of it.
+Storm at Sea:
+  modes:
+    dark:
+      # ---- palette (referenced below) ----
+      storm-abyss: "#08121b"        # deepest water, page bottom
+      storm-deep: "#0c1924"         # page background
+      storm-swell: "#132533"        # cards
+      storm-crest: "#1b3345"        # raised surfaces, inputs
+      storm-cloud: "#2a4558"        # borders, dividers
+      storm-grey: "#7890a3"         # inactive icons
+      storm-mist: "#a3b6c5"         # secondary text
+      storm-lightning: "#f1f6fa"    # primary text
+      storm-seagreen: "#22a79b"     # primary accent
+      storm-foam: "#74e0d0"         # bright accent, links
+      storm-surf: "#56bfb3"         # button and action icons
+      storm-lantern: "#ffc75a"      # lights that are on
+
+      # ---- core ----
+      primary-color: var(--storm-seagreen)
+      light-primary-color: var(--storm-foam)
+      dark-primary-color: "#16786f"
+      accent-color: var(--storm-foam)
+      text-primary-color: "#ffffff"
+      primary-text-color: var(--storm-lightning)
+      secondary-text-color: var(--storm-mist)
+      text-light-primary-color: var(--storm-abyss)
+      disabled-text-color: "#5f7587"
+      divider-color: var(--storm-cloud)
+      outline-color: var(--storm-cloud)
+      outline-hover-color: "#3d6079"
+
+      # ---- backgrounds ----
+      primary-background-color: var(--storm-deep)
+      secondary-background-color: var(--storm-swell)
+      lovelace-background: "linear-gradient(180deg, #1a2a38 0%, #0c1924 45%, #08121b 100%)"
+      clear-background-color: var(--storm-abyss)
+      card-background-color: var(--storm-swell)
+      ha-card-background: var(--storm-swell)
+      ha-card-border-color: var(--storm-cloud)
+      ha-card-border-radius: 14px
+      ha-card-box-shadow: "0 2px 10px rgba(0, 0, 0, 0.35)"
+      dialog-surface-background: var(--storm-swell)
+      mdc-theme-surface: var(--storm-swell)
+      mdc-theme-on-surface: var(--storm-lightning)
+      input-fill-color: var(--storm-crest)
+      input-ink-color: var(--storm-lightning)
+      input-label-ink-color: var(--storm-mist)
+      input-idle-line-color: var(--storm-cloud)
+      input-hover-line-color: var(--storm-foam)
+      code-editor-background-color: var(--storm-abyss)
+      table-row-background-color: var(--storm-swell)
+      table-row-alternative-background-color: var(--storm-deep)
+      data-table-background-color: var(--storm-swell)
+      markdown-code-background-color: var(--storm-crest)
+
+      # ---- header and sidebar (hidden on the display, used elsewhere) ----
+      app-header-background-color: "#0f2130"
+      app-header-text-color: var(--storm-lightning)
+      app-header-border-bottom: "1px solid var(--storm-cloud)"
+      sidebar-background-color: "#0a1620"
+      sidebar-text-color: var(--storm-mist)
+      sidebar-icon-color: var(--storm-grey)
+      sidebar-selected-text-color: var(--storm-foam)
+      sidebar-selected-icon-color: var(--storm-foam)
+
+      # ---- icons and entity state colours ----
+      state-icon-color: var(--storm-surf)
+      state-inactive-color: var(--storm-grey)
+      state-unavailable-color: "#4d6273"
+      paper-item-icon-color: var(--storm-surf)
+      state-active-color: var(--storm-lantern)
+      state-light-active-color: var(--storm-lantern)
+      state-switch-active-color: var(--storm-foam)
+      state-fan-active-color: var(--storm-foam)
+      state-media_player-active-color: var(--storm-foam)
+      state-climate-cool-color: "#5cb8f0"
+      state-climate-heat-color: "#ff8a5c"
+      state-lock-locked-color: "#4fd1a1"
+      state-lock-unlocked-color: "#ff6b6b"
+      state-lock-jammed-color: "#ff6b6b"
+      state-alarm_control_panel-armed_home-color: "#4fd1a1"
+      state-alarm_control_panel-triggered-color: "#ff6b6b"
+
+      # ---- status ----
+      error-color: "#ff6b6b"
+      warning-color: "#ffb454"
+      success-color: "#4fd1a1"
+      info-color: "#5cb8f0"
+
+      # ---- controls ----
+      switch-checked-color: var(--storm-foam)
+      switch-checked-button-color: var(--storm-foam)
+      switch-checked-track-color: "#16786f"
+      switch-unchecked-button-color: var(--storm-grey)
+      switch-unchecked-track-color: var(--storm-cloud)
+      slider-color: var(--storm-seagreen)
+      slider-secondary-color: var(--storm-foam)
+      slider-track-color: var(--storm-cloud)
+      paper-slider-knob-color: var(--storm-foam)
+      paper-slider-active-color: var(--storm-seagreen)
+      mdc-theme-primary: var(--storm-seagreen)
+      mdc-theme-secondary: var(--storm-foam)
+      mdc-theme-on-primary: "#ffffff"
+      mdc-theme-on-secondary: var(--storm-abyss)
+      ha-color-fill-neutral-quiet-resting: var(--storm-crest)
+      ha-color-fill-neutral-normal-resting: var(--storm-cloud)
+      tile-color: var(--storm-grey)
+      badge-color: var(--storm-crest)
+      scrollbar-thumb-color: var(--storm-cloud)
+      rgb-primary-color: "34, 167, 155"
+      rgb-accent-color: "116, 224, 208"
+      rgb-primary-text-color: "241, 246, 250"
+      rgb-secondary-text-color: "163, 182, 197"
+      rgb-card-background-color: "19, 37, 51"

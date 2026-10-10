@@ -61,6 +61,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/ha_ws.py`, `ha/ha_rest.py` | Small Home Assistant WebSocket and REST helpers. Token from `~/.hass_token`. |
 | `ha/ask.py` | Runs text through the voice pipeline as if spoken at the display. Best test tool here. |
 | `ha/build_smart_display.py` | Generates the dashboard (`ha/smart-display.yaml`) from the main Overview. |
+| `ha/themes/storm_at_sea.yaml`, `ha/install_theme.sh` | "Storm at Sea" dark theme (navy, slate, sea green, high-contrast text for the 7" screen) and the script that copies it to Home Assistant and makes it the default dark theme. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
 | `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
