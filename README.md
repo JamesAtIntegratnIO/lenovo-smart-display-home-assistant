@@ -36,6 +36,10 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 |---|---|
 | ![Outside view with exterior lights and roof theme buttons](docs/images/outside.png) | ![Home view: navigation row, clock, thermostat and timers card](docs/images/home.png) |
 
+| Cameras (pictures blurred for privacy) | Lights (some names blurred) |
+|---|---|
+| ![Cameras view: a 2x2 grid of camera snapshots, blurred](docs/images/cameras.png) | ![Lights view: lights and fans grouped by area](docs/images/lights.png) |
+
 ## Layout of this folder
 
 | Path | What it is |
