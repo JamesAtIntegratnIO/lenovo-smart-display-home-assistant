@@ -971,11 +971,18 @@ never turned off; it shows something that moves instead.
 |---|---|
 | nobody there for `SAVER_MINUTES` (5), room bright | full-screen photo slideshow with a clock over it |
 | nobody there for 5 minutes, room dark | a dim clock on black that drifts to a new spot every minute |
-| touch, wake word, volume rocker, camera sees someone | the view it was on before |
+| touch, wake word, volume rocker, someone within about two feet | the view it was on before |
+| someone moving elsewhere in the room | no change: the saver stays, and so does the dashboard |
 | camera takeover, ringing timer, a voice request that opens a view | that view wins; the saver stands down |
 
 Settings are constants at the top of `ha/screen_saver.py`: `SAVER_MINUTES` 5, `DARK_LUX` 3,
-`BRIGHT_LUX` 8, `LUX_STALE_MINUTES` 15, `SUN_DARK_DEGREES` -4, `MOTION_MODE` "motion".
+`BRIGHT_LUX` 8, `LUX_STALE_MINUTES` 15, `SUN_DARK_DEGREES` -4, `MOTION_MODE` "motion",
+`MOTION_SENSITIVITY` 20. How close "within about two feet" is, is `DELTA` in
+`device/proxsense.sh` (step 17a.3a).
+
+Two sensors answer two different questions. The camera says whether anyone is around, and
+only decides when the saver may start. The proximity sensor says whether someone is at the
+display, and with touch and voice is the only thing that ends a saver.
 
 **What View Assist and VACA already offer, and why it was not enough.** View Assist can
 rotate the *background* of its own views (clock, weather) from a folder or an entity; it
@@ -1045,10 +1052,14 @@ an hour without one five-minute gap, most of it with nobody there. Counted over 
 each: 10 events at 70, 4 at 40, none at 15, none in "face" mode (which costs more, VACA at
 about 68% of a core against 40%). At 20 the saver started by itself after five quiet
 minutes, but someone moving six feet away woke it, and the display should only react to a
-touch, a voice command or someone right at it. `MOTION_SENSITIVITY = 8` in
-`ha/screen_saver.py` is what runs now. The distance at which 8 still sees a person has to be
-found by standing in front of it; lower it further, or set `MOTION_MODE = "none"` for touch
-and voice only, if it still wakes from across the room.
+touch, a voice command or someone right at it. Frame differencing cannot tell near from
+far, so no sensitivity gives that (8 was tried). The camera therefore no longer ends a
+saver at all: "Smart Display - Activity" ignores it while the saver is showing. It still
+counts as activity while the dashboard is up, so the saver does not start with people moving
+about the kitchen, and for that job seeing across the room is right: `MOTION_SENSITIVITY = 20`.
+"Someone right at it" comes from the proximity sensor, step 17a.3a. Setting
+`MOTION_MODE = "none"` would give the half core back, at the price of the saver starting
+five minutes after the last touch whoever is in the room.
 
 Dead end worth knowing: `NSCamCustomSensor::getSensorFacingDirection` in
 `libcameracustom.so` looks like the place (a table of back, front, back) but changing it
@@ -1092,6 +1103,45 @@ readings to the webhook by hand:
 
 ```bash
 curl -X POST -H 'Content-Type: application/json' -d '{"lux": 1}' http://10.0.1.174:8123/api/webhook/kitchen_display_lux
+```
+
+**17a.3a Someone right at the display: the proximity sensor.** The same chip (VCNL4200, I2C
+bus 2, address `0x51`) has an infrared proximity half, listed by `dumpsys sensorservice` as
+"VCNL 4200 Proximity Sensor". Nothing uses it: it is a dynamic sensor like the light one, so
+VACA's "Screen on with proximity" does not see it, there is no kernel driver or `/sys` entry
+(Android Things' `peripheralman` drives the chip from user space), and its register
+`PS_CONF1` reads 1, shut down. The display has no i2c tools either, so
+`device/src/proxsense.c` is a small static program that talks to `/dev/i2c-2` itself. It
+switches proximity on at the chip's longest reach (9T integration, 8 pulses, 200 mA LED,
+16-bit output; registers 3 = `0x080a`, 4 = `0x0760`), leaves the light sensor's registers
+alone (auto-brightness went on working), reads the count five times a second, and prints a
+line when it rises `DELTA` above the resting level for two readings in a row, then every 30
+seconds while it stays there. `device/proxsense.sh` posts each line to the local-only webhook
+`kitchen_display_near`, a trigger of "Smart Display - Activity".
+
+Measured here with a person facing the display: resting 38 (34 to 43), about 56 at three
+feet, about 195 at arm's length, 1100 to 1300 for a hand six inches away, nothing at six
+feet. `DELTA=60` puts the line at roughly two feet. The resting level is followed slowly, and
+anything that stays in front for two minutes becomes the new resting level, so an object left
+on the counter cannot hold the display awake. It works the same in the dark. Cost: about
+0.03% of a core.
+
+```bash
+nix shell nixpkgs#zig -c zig cc -target arm-linux-musleabihf -static -Os -s -o work/proxsense device/src/proxsense.c
+adb remount
+adb push work/proxsense /system/bin/proxsense
+adb push device/proxsense.sh /system/bin/proxsense.sh
+adb push device/proxsense.rc /system/etc/init/proxsense.rc
+adb shell 'chmod 755 /system/bin/proxsense /system/bin/proxsense.sh; chmod 644 /system/etc/init/proxsense.rc; sync'
+adb reboot
+```
+
+After the reboot `getprop init.svc.proxsense` says `running`. To see the readings and pick
+another `DELTA`: `adb shell 'stop proxsense; proxsense raw'`, then `start proxsense`. To test
+without standing there:
+
+```bash
+curl -X POST -H 'Content-Type: application/json' -d '{"counts": 200, "rest": 38}' http://10.0.1.174:8123/api/webhook/kitchen_display_near
 ```
 
 **17a.4 Photos.** `$AVB_PYTHON ha/photo_album.py` (needs SSH to Home Assistant):
@@ -1145,11 +1195,13 @@ report per 20 seconds).
 dashboard resource (a `data:` URL, like the HLS guard), creates the helpers and three automations:
 
 - **Smart Display - Activity** presses `input_button.kitchen_display_activity` when the
-  camera sees motion, the voice satellite changes state, the volume changes, or the display
-  changes view (except to the saver). The card presses the same button on touch. "Idle" is
-  then one question: how long since that button was pressed. While the room is dark the
-  camera is ignored, because noise in a dark picture reads as motion and would light the
-  dashboard up at night; touch and voice still count.
+  proximity sensor reports someone close, the voice satellite changes state (the wake word
+  does that), the volume changes, the display changes view (except to the saver), or the
+  camera sees motion. The card presses the same button on touch. "Idle" is then one
+  question: how long since that button was pressed. The camera is ignored while the saver is
+  showing, because it sees movement across the whole room and the saver should only give
+  way to someone using the display; and while the room is dark, because noise in a dark
+  picture reads as motion.
 - **Smart Display - Screen saver** starts when the button has been quiet for 5 minutes, the
   camera sees nobody, the satellite is idle, View Assist is in its normal mode and no camera
   takeover is showing. It remembers the current view in
@@ -1252,8 +1304,9 @@ seconds after the sensor is set to off.
 
 Screen saver: `adb shell dumpsys media.camera | grep Facing` says Front and
 `binary_sensor.…_motion` turns on when you wave at the display. Leave it alone for five
-minutes: slideshow with a clock (or the dark clock at night). `adb shell input tap 500 300`
-brings back the previous view.
+minutes: slideshow with a clock (or the dark clock at night). Walking past it changes
+nothing; stepping up to it, the wake word, or `adb shell input tap 500 300` brings back the
+previous view.
 
 Then by voice at the display: "Okay Nabu, set a timer for one minute", "Okay Nabu, play
 some Fleetwood Mac", and press the rocker.
@@ -1282,8 +1335,9 @@ setting in step 17.
   automation, and on Home Assistant delete `/config/packages/kitchen_display.yaml`,
   `/config/kitchen_display/` and `/config/www/kitchen_display/`, then restart it.
   On the display: push the two originals from `downloads/backup/` back to `/vendor`
-  (step 17a.1), delete `/system/bin/lightsense.sh` and `/system/etc/init/lightsense.rc`,
-  and `adb shell appops set com.msp1974.vacompanion WRITE_SETTINGS default`.
+  (step 17a.1), delete `/system/bin/lightsense.sh`, `/system/bin/proxsense`,
+  `/system/bin/proxsense.sh` and the `lightsense.rc` and `proxsense.rc` files in
+  `/system/etc/init/`, and `adb shell appops set com.msp1974.vacompanion WRITE_SETTINGS default`.
 - **Remove the button watcher:** delete `/system/bin/volkeys.sh` and
   `/system/etc/init/volkeys.rc`, and the "Smart Display - Volume buttons" automation.
 - **Stock firmware:** flash the user build to the active slot and relock AVB with

@@ -31,11 +31,12 @@ named "Den display", and the entity ids still say so (`sensor.den_display`,
   doorbell, puts that camera on the screen. It goes back to what it was showing 30 seconds
   after the camera is clear.
 - **Physical volume rocker** sets one system-wide volume in ten 3 dB positions.
-- **Burn-in protection**: after 5 minutes with nobody at it (the display's own camera
-  watches for motion), a full-screen slideshow of a shared Google Photos album with a clock
-  over it. When the room is dark it shows a dim clock on black instead, which drifts around
-  the screen. A touch, the wake word, the volume rocker or a camera event brings back the
-  view it was on. The screen is never switched off.
+- **Burn-in protection**: after 5 minutes with nobody around (the display's own camera
+  watches the room for motion), a full-screen slideshow of a shared Google Photos album with
+  a clock over it. When the room is dark it shows a dim clock on black instead, which drifts
+  around the screen. Only someone using it brings back the view it was on: a touch, the wake
+  word, the volume rocker, or stepping up to within about two feet (the display's infrared
+  proximity sensor). Movement across the room does not. The screen is never switched off.
 
 ## Screenshots
 
@@ -82,6 +83,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/phone_link_tool.py` | The "Send a link to the owner's phone" script the AI calls after a web search for a recipe or how-to. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
 | `device/lightsense.sh`, `device/lightsense.rc` | Reports the display's ambient light reading to Home Assistant, started at boot. |
+| `device/proxsense.sh`, `device/proxsense.rc`, `device/src/proxsense.c` | Tells Home Assistant when someone is right at the display, from its proximity sensor. The C program reads the sensor over I2C (built with `zig cc`, command in the file); the script posts to a webhook; started at boot. |
 | `device/volkeys.sh`, `device/volkeys.rc` | Volume button watcher installed on the display and its boot entry. |
 | `downloads/` | Firmware zip, AVB unlock tool, APKs, and a backup of the stock WebView. Not in git. |
 | `work/` | Scratch: screenshots, logs, probe scripts. Not in git. |
@@ -124,6 +126,9 @@ refresh it if the Overview's quick actions or roof themes change.
     `/vendor/lib/libcam.metadataprovider.so` (offset `0x4dc6`, `01` -> `00`) and the back-camera
     feature line removed from `/vendor/etc/permissions/android.hardware.camera.xml`.
     Originals are in `downloads/backup/`.
+14. `/system/bin/proxsense`, `/system/bin/proxsense.sh` and `/system/etc/init/proxsense.rc`
+    from `device/`: the proximity sensor (VCNL4200, I2C bus 2, address `0x51`) switched on
+    and watched.
 
 ## What was done in Home Assistant
 
@@ -156,7 +161,7 @@ refresh it if the Overview's quick actions or roof themes change.
   because the display decodes at most 1920x1088 H.264.
 - **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 5,
   mic gain 5, wake sound "Home Assistant", assistant "Home Assistant Cloud", landscape,
-  motion detection "motion".
+  motion detection "motion" at sensitivity 20.
 
 ## What was done on the network (UniFi)
 
@@ -228,9 +233,12 @@ refresh it if the Overview's quick actions or roof themes change.
   the dark and bright thresholds have only been tested by posting readings by hand.
 - The dark clock in a really dark room (it was forced on in daylight), and whether the
   camera stays quiet enough at night for the bright-room case.
-- How close someone has to be for the camera to wake the saver at sensitivity 8. At 20 it
-  woke from six feet away, which was too far; 8 has not been checked with a person yet.
-- Waking the saver with the spoken wake word. A spoken announcement through the satellite
-  woke it, as did a touch, the volume webhook and a camera takeover; the wake word itself
-  goes the same way but was not spoken at it.
+- A person walking up to the saver after the proximity reporter was installed. The sensor
+  was measured with a person at set distances, and a posted reading wakes the saver, but
+  nobody has yet walked up to a showing saver with the whole chain running.
+- Waking the saver with the spoken wake word. VACA's "Wake" button (the same satellite
+  path), a spoken announcement, a touch, the volume webhook and a camera takeover all woke
+  it; the wake word itself was not spoken at it.
+- That real movement across the room leaves the saver alone. The camera's motion state was
+  set by hand for the test, and the saver stayed.
 - "face" detection mode, and a real doorbell press while the saver is up.

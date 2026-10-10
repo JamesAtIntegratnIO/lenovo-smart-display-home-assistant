@@ -3,16 +3,22 @@
 
   nobody there for SAVER_MINUTES, room bright -> full-screen photo slideshow with a clock over it
   nobody there for SAVER_MINUTES, room dark   -> dim clock on black that shifts position
-  someone appears, touches, speaks            -> the view it was on before
+  a touch, the wake word, someone right at it -> the view it was on before
 
 The screen is never turned off. Both faces are one view (/smart-display/saver, one card);
 the card switches between them as input_boolean.kitchen_display_dark changes.
 
-"Someone is there" is the display's own camera (VACA's motion detection,
-binary_sensor.…_motion) plus anything that shows a person using it: a touch, the wake word,
-the volume rocker, a change of view. All of those press one button helper, so "idle" is
-simply "that button has not been pressed for a while and the camera sees nobody". In a dark
-room the camera is ignored (noise in a dark picture reads as motion); touch and voice still count.
+Two questions, two sensors. "Is anyone around?" decides when the saver may start, and is the
+display's camera (VACA's motion detection, binary_sensor.…_motion) plus anything that shows
+a person using it: a touch, the wake word, the volume rocker, a change of view. All of those
+press one button helper, so "idle" is simply "that button has not been pressed for a while
+and the camera sees nobody". In a dark room the camera is ignored (noise in a dark picture
+reads as motion).
+
+"Is someone using it?" decides when a showing saver gives the screen back, and the camera
+has no say in that: it sees movement across the whole room. Only a touch, the wake word, the
+volume rocker, or the display's proximity sensor do it. That sensor (device/proxsense.sh,
+webhook kitchen_display_near) reports a person within about two feet, in light or dark.
 
 "Dark" comes from the display's ambient light sensor, reported by device/lightsense.sh to
 the webhook kitchen_display_lux: dark below DARK_LUX, bright above BRIGHT_LUX, unchanged in
@@ -48,7 +54,8 @@ BRIGHT_LUX = 8           # room light above this: photo slideshow (in between: n
 LUX_STALE_MINUTES = 15   # no light reading for this long: let the sun decide
 SUN_DARK_DEGREES = -4    # sun elevation below this counts as dark when there is no reading
 MOTION_MODE = "motion"   # VACA camera detection: "motion", "face" or "none"
-MOTION_SENSITIVITY = 8   # 0-100. Low on purpose: only someone right at the display should count. At VACA's default of 70 an empty kitchen read as motion all day; at 20 a person 6 feet away woke the saver
+MOTION_SENSITIVITY = 20  # 0-100. Sees a person across the room, which is its job: it only holds the saver off. At VACA's default of 70 an empty kitchen read as motion all day
+# How close someone must be to end the saver is DELTA in device/proxsense.sh, on the display.
 
 DEV = "vaca_ha0000xx"
 DISPLAY = "sensor.den_display"
@@ -60,6 +67,7 @@ LUX = "input_number.kitchen_display_lux"
 LUX_AT = "input_datetime.kitchen_display_lux_at"   # when that reading arrived (a restored number looks fresh after a restart)
 DARK = "input_boolean.kitchen_display_dark"
 LUX_WEBHOOK = "kitchen_display_lux"
+NEAR_WEBHOOK = "kitchen_display_near"
 VOLUME = f"number.{DEV}_music_volume"
 ACTIVITY = "input_button.kitchen_display_activity"
 RETURN = "input_text.kitchen_display_saver_return"
@@ -117,10 +125,12 @@ ON_SAVER = f"{PATH} == '{SAVER}'"
 
 activity = {
     "alias": "Smart Display - Activity",
-    "description": "Presses the kitchen display's activity button whenever someone is seen at it or uses it. "
-                   "The screen saver counts idle time from the last press",
+    "description": "Presses the kitchen display's activity button whenever someone uses it or stands right at it, "
+                   "and, while the screen saver is not showing, whenever the camera sees movement. "
+                   "The screen saver counts idle time from the last press and ends on a press",
     "triggers": [
         {"trigger": "state", "entity_id": PRESENCE, "to": "on", "id": "camera"},
+        {"trigger": "webhook", "id": "near", "webhook_id": NEAR_WEBHOOK, "allowed_methods": ["POST"], "local_only": True},
         {"trigger": "state", "entity_id": SATELLITE, "id": "voice",
          "not_from": ["unavailable", "unknown"], "not_to": ["unavailable", "unknown"]},
         {"trigger": "state", "entity_id": VOLUME, "id": "volume",
@@ -133,8 +143,10 @@ activity = {
     # camera takeover that started from the saver when it hands the screen back).
     "conditions": [
         {"condition": "template", "value_template": f"{{{{ trigger.id != 'view' or not ({ON_SAVER}) }}}}"},
-        # Noise in a dark picture reads as motion, and nobody is looking at a display in a dark room.
-        {"condition": "template", "value_template": f"{{{{ trigger.id != 'camera' or not is_state('{DARK}', 'on') }}}}"}],
+        # The camera keeps the dashboard up while people are about, but never ends a showing saver:
+        # it sees movement six feet away and more. And noise in a dark picture reads as motion.
+        {"condition": "template",
+         "value_template": f"{{{{ trigger.id != 'camera' or not ({ON_SAVER} or is_state('{DARK}', 'on')) }}}}"}],
     "actions": [{"action": "input_button.press", "target": {"entity_id": ACTIVITY}}],
     "mode": "single", "max_exceeded": "silent",
 }
@@ -155,7 +167,8 @@ STOP = [{"trigger": "state", "entity_id": ACTIVITY},
 saver = {
     "alias": "Smart Display - Screen saver",
     "description": f"Nobody at the kitchen display for {SAVER_MINUTES} minutes: photo slideshow with a clock, "
-                   "or a dim clock when the room is dark. Presence, touch or voice brings back the previous view",
+                   "or a dim clock when the room is dark. A touch, the wake word, the volume rocker or someone "
+                   "right at the display brings back the previous view",
     "triggers": [
         {"trigger": "state", "entity_id": ACTIVITY, "for": {"minutes": SAVER_MINUTES}, "id": "idle"},
         {"trigger": "state", "entity_id": PRESENCE, "to": "off", "for": {"minutes": SAVER_MINUTES}, "id": "idle"},
