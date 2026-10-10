@@ -59,6 +59,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
 | `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
+| `ha/hls_guard.py`, `ha/frontend/hls_guard.js` | Temporary: stops live camera views from exhausting the display browser's connections on Home Assistant 2026.10.0. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
 | `ha/music_tool.py` | The "play music" script the AI calls, plus the AI agent's prompt and settings. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
@@ -156,6 +157,14 @@ refresh it if the Overview's quick actions or roof themes change.
   self-signed RTSPS certificate ([core issue 184775](https://github.com/home-assistant/core/issues/184775)).
   Fixed in 2026.10.1; until then `ha/protect_stream_workaround.py` reloads the integration
   after each drop. Delete that automation after updating.
+- **The same bug blanks the camera snapshots on the display.** The frontend starts HLS next
+  to WebRTC for every live view, the HLS playlist request never answers on 2026.10.0, and it
+  is not cancelled when the view closes. Each live view leaves two requests hanging; a
+  browser allows six connections per server, so after three live views nothing else loads.
+  `ha/hls_guard.py install` registers a small script (`ha/frontend/hls_guard.js`) that
+  refuses HLS on the display only, so live views use WebRTC alone. Run
+  `ha/hls_guard.py remove` after updating. Found with the WebView's remote debugger
+  (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`).
 - A fixed phrase answered by an automation appears to the AI as a reply with no tool call.
   Its prompt has to say those are real, or it "corrects" them.
 

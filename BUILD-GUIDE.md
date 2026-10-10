@@ -617,6 +617,43 @@ python3 ha/ha_rest.py POST /api/states/event.g4_doorbell_pro_poe_doorbell \
   UniFi Protect integration shortly after a camera drops, once the display has left the
   camera view. Delete that automation after updating.
 
+  **The same bug also blanks the camera snapshots on the display**, and that needs a second
+  workaround. Home Assistant's frontend starts an HLS player next to the WebRTC one for
+  every live camera view. On 2026.10.0 the HLS playlist request
+  (`/api/hls/<token>/master_playlist.m3u8`) never gets an answer, and the frontend does not
+  cancel it when the view closes. Each live view therefore leaves two requests hanging for
+  good. A browser allows six connections per server, so after three live views every later
+  request to Home Assistant queues forever: the Cameras grid shows grey tiles or broken-image
+  icons, and even a page reload hangs. Home Assistant itself is fine throughout (the same
+  snapshot URL answers `curl` from the display in half a second), which is what makes it
+  confusing. Restarting the companion app clears it until the next three live views.
+
+  Fix until 2026.10.1:
+
+  ```bash
+  nix develop --command sh -c '$AVB_PYTHON ha/hls_guard.py install'
+  ```
+
+  This registers `ha/frontend/hls_guard.js` as a dashboard resource (as a `data:` URL, so no
+  file has to be copied into Home Assistant). It makes `fetch` and `XMLHttpRequest` refuse
+  `/api/hls/` URLs, only when the browser's user agent contains `mt8167s`, so every other
+  browser is untouched. The frontend then carries on with WebRTC alone. Verified from a clean
+  start: five live views in a row left no request hanging, all four cameras stayed available,
+  and the grid loaded. Remove it after updating with `ha/hls_guard.py remove`.
+
+  How it was found, since this technique is useful for any display-side problem: the WebView
+  exposes Chrome's remote debugger.
+
+  ```bash
+  adb shell 'cat /proc/net/unix | grep -o "webview_devtools_remote_[0-9]*"'
+  adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>
+  curl -s http://127.0.0.1:9333/json        # lists pages with a webSocketDebuggerUrl
+  ```
+
+  Speaking the DevTools protocol to that WebSocket (`Network.enable`, then watch
+  `requestWillBeSent` / `loadingFinished`) showed which requests never finished, and
+  `adb shell netstat -tn | grep 8123` showed the six-plus-one connections pinned open.
+
 ---
 
 ## 12. Voice features
@@ -889,6 +926,7 @@ display reacts (2 s to brighten, 4 s to dim, fixed in the firmware).
 | Camera tiles broken on the main Overview | 3 of 4 high-resolution camera entities were unavailable in Home Assistant; high-res streams are also beyond the decoder | Medium resolution entities | Entity states; WebRTC "No decodable frame" in `logcat` |
 | Camera takeover returned to Home instead of the previous view | View Assist goes to its home screen on a mode change, and that landed after the automation's own navigate | Restore the mode, wait 1 s, then navigate | History of `sensor.vaca_…_current_path` showed the right view for under a millisecond |
 | Camera entities flip to `unavailable` after a live view | Home Assistant 2026.10.0 ships FFmpeg 9, which rejects Protect's self-signed RTSPS certificate, so the HLS stream worker fails for every camera; WebRTC on the display still works | Update to 2026.10.1 or later. Until then `ha/protect_stream_workaround.py` reloads the integration after a drop | `system_log/list`; requesting `camera/stream` for a healthy camera broke it too; `ffmpeg -i rtsps://…` printed "Peer certificate failed verification"; core issue 184775 |
+| Camera snapshots blank on the display (grey tiles, broken-image icons) | Same 2026.10.0 bug: each live view leaves two HLS playlist requests hanging, and six fill the browser's connection limit | `ha/hls_guard.py install` (refuses HLS on the display); restart the app to clear it once | WebView remote debugger network trace; `netstat` on the device; the same URL answered `curl` instantly |
 | Music "playing" but silent | IoT VLAN could not reach Music Assistant's stream port 8097 | Firewall rule | `logcat` showed the stream URL; `curl` to 8097 from the device returned nothing |
 | Rocker not loud enough | Android media stream was at 40 of 100 underneath the player's volume | Drive the stream itself | `dumpsys audio` |
 | Rocker steps uneven | Android's volume curve | 3 dB table | `dumpsys media.audio_policy` |
@@ -955,7 +993,7 @@ setting in step 17.
   camera on detection or doorbell" automation and the
   `input_text.den_display_takeover_return` helper.
 - **After updating Home Assistant to 2026.10.1 or later:** delete the "Smart Display -
-  Reload Protect when a camera drops" automation.
+  Reload Protect when a camera drops" automation, and run `ha/hls_guard.py remove`.
 - **Remove the button watcher:** delete `/system/bin/volkeys.sh` and
   `/system/etc/init/volkeys.rc`, and the "Smart Display - Volume buttons" automation.
 - **Stock firmware:** flash the user build to the active slot and relock AVB with
