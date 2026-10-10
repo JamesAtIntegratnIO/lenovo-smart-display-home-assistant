@@ -28,17 +28,19 @@ In Home Assistant the device is "Den display".
 
 Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 
+![Home view: navigation row, clock, thermostat, timers card, quick actions and door locks](docs/images/home.png)
+
 | Music, opened by a voice request | Sports |
 |---|---|
 | ![Music view with the now-playing card and system volume](docs/images/music.png) | ![Sports view with the TeamTracker game card](docs/images/sports.png) |
 
-| Outside lights and roof themes | Home (left half) |
+| Outside lights and roof themes | Lights (some names blurred) |
 |---|---|
-| ![Outside view with exterior lights and roof theme buttons](docs/images/outside.png) | ![Home view: navigation row, clock, thermostat and timers card](docs/images/home.png) |
+| ![Outside view with exterior lights and roof theme buttons](docs/images/outside.png) | ![Lights view: lights and fans grouped by area](docs/images/lights.png) |
 
-| Cameras (pictures blurred for privacy) | Lights (some names blurred) |
+| Cameras (pictures blurred for privacy) | |
 |---|---|
-| ![Cameras view: a 2x2 grid of camera snapshots, blurred](docs/images/cameras.png) | ![Lights view: lights and fans grouped by area](docs/images/lights.png) |
+| ![Cameras view: a 2x2 grid of camera snapshots, blurred](docs/images/cameras.png) | |
 
 ## Layout of this folder
 
