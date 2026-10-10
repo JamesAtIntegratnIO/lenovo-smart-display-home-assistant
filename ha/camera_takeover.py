@@ -69,7 +69,7 @@ DONE = ("{% set ns = namespace(last=started | as_datetime, on=false) %}"
         "{% endfor %}"
         f"{{{{ (not ns.on and (now() - ns.last).total_seconds() >= {CLEAR_SECONDS}) "
         f"or (now() - (started | as_datetime)).total_seconds() >= {MAX_SECONDS} }}}}")
-ON_TAKEOVER = f"{{{{ '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') }}}}"
+LEFT = f"{{{{ '{MARK}' not in (state_attr('{DISPLAY}', 'current_path') or '') }}}}"
 
 actions = [
     {"variables": {
@@ -85,16 +85,22 @@ actions = [
     # No timeout in the path: the camera view holds the screen until this automation gives it back.
     {"action": "view_assist.navigate",
      "data": {"device": DISPLAY, "path": f"/view-assist/camera?camera={{{{ camera }}}}&{MARK}"}},
+    # Poll until the camera has been quiet long enough, or someone moves the display elsewhere.
     {"repeat": {
-        "sequence": [{"delay": {"seconds": 5}}],
-        "until": [{"condition": "template", "value_template": DONE}]}},
-    # Someone moved the display to another view in the meantime: leave it where they put it.
-    {"condition": "template", "value_template": ON_TAKEOVER},
+        "sequence": [{"delay": {"seconds": 3}}],
+        "until": [{"condition": "or", "conditions": [
+            {"condition": "template", "value_template": DONE},
+            {"condition": "template", "value_template": LEFT}]}]}},
+    # The camera view put View Assist in "hold" mode and nothing else takes it out again, so the
+    # mode is restored either way. If someone moved the display, they stay on the view they chose.
+    {"variables": {"go_to": f"{{% if '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') %}}"
+                            "{{ came_from.split('|', 1)[1] }}"
+                            f"{{% else %}}{{{{ state_attr('{DISPLAY}', 'current_path') }}}}{{% endif %}}"}},
     {"action": "view_assist.set_state", "target": {"entity_id": DISPLAY},
      "data": {"mode": "{{ came_from.split('|', 1)[0] }}"}},
-    # View Assist goes to its home screen when the mode changes; let that land before going back.
+    # View Assist goes to its home screen when the mode changes; let that land before navigating.
     {"delay": {"seconds": 1}},
-    {"action": "view_assist.navigate", "data": {"device": DISPLAY, "path": "{{ came_from.split('|', 1)[1] }}"}},
+    {"action": "view_assist.navigate", "data": {"device": DISPLAY, "path": "{{ go_to }}"}},
 ]
 
 config = {"alias": "Smart Display - Show camera on detection or doorbell",

@@ -577,10 +577,13 @@ helper it needs (`input_text.den_display_takeover_return`). Edit `CAMERAS` and
 - **What it does:** remembers the display's current view and mode in the helper, then
   opens `/view-assist/camera?camera=<medium entity>&takeover=1`. There is no `timeout` in
   the path, so View Assist holds the camera until the automation gives the screen back.
-- **Going back:** every 5 seconds it checks that camera's sensors. When they have all been
+- **Going back:** every 3 seconds it checks that camera's sensors. When they have all been
   off for `CLEAR_SECONDS` (30), or after `MAX_SECONDS` (300) whatever happens, it restores
-  the mode and navigates to the remembered view. If someone has moved the display to
-  another view in the meantime, it leaves the display alone.
+  the mode and navigates to the remembered view.
+- **If someone moves the display to another view during a takeover,** the automation
+  notices within 3 seconds, restores the mode and keeps them on the view they chose. The
+  mode has to be restored even then: the camera view puts View Assist in "hold" and
+  nothing else takes it out, which would stop views timing out back to Home.
 - **Several cameras:** the newest detection wins and the first return point is kept (the
   `takeover=1` marker is how the automation recognises its own camera view). For
   `RING_HOLD_SECONDS` (30) after a doorbell ring, only the doorbell camera may take the screen.
