@@ -1,0 +1,14 @@
+# Start the volume button watcher once Android has booted.
+#
+# SELinux on this build refuses init -> su directly, but allows init -> shell and
+# shell -> su (the same path `adb shell su` uses). The watcher needs the su domain
+# to read the GPIO sysfs files, and the inet group (3003) for its webhook calls.
+service volkeys /system/bin/sh -c "exec /system/xbin/su 0,0,3003 /system/bin/sh /system/bin/volkeys.sh"
+    class late_start
+    user root
+    group root
+    seclabel u:r:shell:s0
+    disabled
+
+on property:sys.boot_completed=1
+    start volkeys
