@@ -709,7 +709,11 @@ timers".
 and similar for each dashboard view.
 
 **12e. Music phrases.** Blueprint "View Assist - Play Music with Music Assistant", after
-step 14. Inputs in `ha/blueprint_automations.py` (`view_path: /smart-display/music`).
+step 14. Inputs in `ha/blueprint_automations.py` (`view_path: /smart-display/music`, and
+`play_artist_command` with the default's "play some {artist}" removed). The default treats
+every "play some X" as an artist, so "play some oldies" played a stock-music artist called
+"Oldies Playing". Without it, "play some X" goes to the AI (step 15), which decides between
+artist and genre; "play music by X" and "start the X playlist" are still answered locally.
 
 Test any of it without speaking:
 
@@ -781,9 +785,12 @@ A healthy run logs `Playing music: http://<ha>:8097/single/…`, an `AudioTrack`
 2. Settings > Devices & services > Add integration > **Anthropic**, paste the key.
 3. `python3 ha/music_tool.py` then does three things (each also possible in the UI):
    - creates `script.den_display_play_music`, a script with fields `query`,
-     `media_type` and `radio_mode` that calls `music_assistant.play_media` on the
-     display's player and switches the display to the Music view. Scripts exposed to
-     voice become tools the AI can call, and the script's description is what it reads;
+     `media_type`, `artist` and `radio_mode` that plays on the display's player through
+     Music Assistant, switches the display to the Music view and returns what it
+     started. Scripts exposed to voice become tools the AI can call, and the script's
+     description is what it reads;
+   - creates "Smart Display - Shuffle local music requests", which turns shuffle on when
+     the music blueprint (step 12e) fires;
    - reconfigures the Claude conversation agent: the prompt in the file, model
      `claude-haiku-5-5`, max tokens 1024, web search on with at most 2 uses, user
      location on;
@@ -800,6 +807,20 @@ A healthy run logs `Playing music: http://<ha>:8097/single/…`, an `AudioTrack`
 
 Door locks are not exposed to voice by default. If you expose them, remember that
 "unlock the front door" then works for anyone in earshot.
+
+**How genres are played.** A genre, era or mood ("oldies", "80s", "dinner music") is not
+something Spotify can play, and a free search for one returns whatever is named after it.
+For `media_type: genre` the script searches playlists only and ranks them: Spotify's own
+editorial playlists first (ids starting `37i9dQZF1D`), then its genre mixes (`37i9dQZF1E`,
+except the per-song "... Radio" ones, `37i9dQZF1E8`), then everyone else's; within a tier a
+name containing every word asked for wins. "Oldies" lands on "Classic Oldies", "classic
+rock" on "Rock Classics", "80s" on "All Out 80s". The prompt tells the AI to use `genre`
+for these rather than guess an artist or playlist itself.
+
+**Shuffle.** Genre, artist and playlist plays are shuffled so they do not open on the same
+song every time; an album or a single track plays in order. The blueprint's local phrases
+never set shuffle and the queue keeps whatever the last request left, hence the small
+automation that turns it on whenever the blueprint fires.
 
 **Why the prompt says what it says.** A request answered by a sentence-trigger automation
 appears in the AI's conversation history as an assistant reply with no tool call behind

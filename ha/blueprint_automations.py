@@ -50,7 +50,11 @@ post("view_assist_play_music", blueprint(
     "View Assist - Play Music with Music Assistant",
     "Voice music requests played through Music Assistant on View Assist displays",
     "dinki/blueprint-playmusicwithmusicassistant.yaml",
-    {"ma_instance": MA_ENTRY, "view_path": "/smart-display/music"}))
+    {"ma_instance": MA_ENTRY, "view_path": "/smart-display/music",
+     # The default also has "play some {artist} [music]", which treats every "play some X" as an
+     # artist ("play some oldies" played an artist called "Oldies Playing"). Without it those
+     # go to the AI, which picks artist or genre and calls the script in ha/music_tool.py.
+     "play_artist_command": "(play the artist {artist} | play [some] (music | songs) by {artist})"}))
 
 # The sports blueprint repoints one shared tracker at whichever team was asked about. Put it
 # back on the Seahawks afterwards so requests with no team named ("get sports scores") report on them.

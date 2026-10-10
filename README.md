@@ -61,7 +61,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
 | `ha/hls_guard.py`, `ha/frontend/hls_guard.js` | Temporary: stops live camera views from exhausting the display browser's connections on Home Assistant 2026.10.0. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
-| `ha/music_tool.py` | The "play music" script the AI calls, plus the AI agent's prompt and settings. |
+| `ha/music_tool.py` | The "play music" script the AI calls (genres resolve to Spotify's own playlists), the shuffle automation, and the AI agent's prompt and settings. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
 | `device/volkeys.sh`, `device/volkeys.rc` | Volume button watcher installed on the display and its boot entry. |
 | `downloads/` | Firmware zip, AVB unlock tool, APKs, and a backup of the stock WebView. Not in git. |
