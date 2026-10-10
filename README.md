@@ -58,6 +58,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/build_smart_display.py` | Generates the dashboard (`ha/smart-display.yaml`) from the main Overview. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
+| `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
 | `ha/music_tool.py` | The "play music" script the AI calls, plus the AI agent's prompt and settings. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
@@ -111,9 +112,10 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Exposed to voice** in addition to the defaults: the display's Music Assistant player
   and `script.den_display_play_music`.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
-- **Automations**: three "View Assist - …" blueprint instances and five "Smart Display - …"
+- **Automations**: three "View Assist - …" blueprint instances and six "Smart Display - …"
   ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,
-  sports default team; see `ha/`).
+  sports default team, and a temporary one that reloads UniFi Protect when a camera drops;
+  see `ha/`).
 - **Helper**: `input_text.den_display_takeover_return`, where the camera automation keeps
   the view to go back to.
 - **Camera entities**: the four "Medium resolution channel" UniFi Protect cameras enabled,
@@ -149,9 +151,11 @@ refresh it if the Overview's quick actions or roof themes change.
   why the rocker goes through Home Assistant.
 - **View Assist goes to its home screen whenever the mode changes.** To return to another
   view after a camera, restore the mode first, wait a second, then navigate.
-- **A live camera view can leave the camera entity `unavailable` in Home Assistant** while
-  the picture on the display is fine (WebRTC works, the HLS worker does not). Reloading the
-  UniFi Protect integration clears it.
+- **Home Assistant 2026.10.0 marks UniFi Protect cameras `unavailable` after any live view**
+  while the picture on the display is fine. FFmpeg 9 in that release rejects Protect's
+  self-signed RTSPS certificate ([core issue 184775](https://github.com/home-assistant/core/issues/184775)).
+  Fixed in 2026.10.1; until then `ha/protect_stream_workaround.py` reloads the integration
+  after each drop. Delete that automation after updating.
 - A fixed phrase answered by an automation appears to the AI as a reply with no tool call.
   Its prompt has to say those are real, or it "corrects" them.
 

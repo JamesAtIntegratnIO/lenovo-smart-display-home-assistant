@@ -606,11 +606,16 @@ python3 ha/ha_rest.py POST /api/states/event.g4_doorbell_pro_poe_doorbell \
   between the two. Coming back to a view other than Home shows Home for that second.
 - A view other than Home is still subject to View Assist's own view timeout afterwards
   (20 seconds here), exactly as if it had been opened by voice.
-- Opening a camera live can flip its Home Assistant entity to `unavailable`: the display
-  plays the stream over WebRTC, but Home Assistant's HLS worker fails on the same camera
-  ("Error opening stream (I/O error, rtsps://…)") and keeps retrying. The live picture on
-  the display is not affected, so the automation does not check the entity's state.
-  Reloading the UniFi Protect integration clears it until the next live view.
+- **Home Assistant 2026.10.0 only:** opening a camera live flips its entity to
+  `unavailable`. That release moved to FFmpeg 9, which verifies TLS certificates by
+  default, and Protect serves RTSPS with a self-signed certificate. The HLS stream worker
+  fails ("Error opening stream (I/O error, rtsps://…)") and keeps retrying, while the
+  display's WebRTC picture is fine, so the takeover automation does not check the entity's
+  state. This is [home-assistant/core#184775](https://github.com/home-assistant/core/issues/184775),
+  fixed in 2026.10.1. Until you are on 2026.10.1 or later, run
+  `python3 ha/protect_stream_workaround.py`: it creates an automation that reloads the
+  UniFi Protect integration shortly after a camera drops, once the display has left the
+  camera view. Delete that automation after updating.
 
 ---
 
@@ -883,7 +888,7 @@ display reacts (2 s to brighten, 4 s to dim, fixed in the firmware).
 | Generic score request reports the wrong team | Shared tracker keeps the last team | Default-team automation | Tested after asking about another team |
 | Camera tiles broken on the main Overview | 3 of 4 high-resolution camera entities were unavailable in Home Assistant; high-res streams are also beyond the decoder | Medium resolution entities | Entity states; WebRTC "No decodable frame" in `logcat` |
 | Camera takeover returned to Home instead of the previous view | View Assist goes to its home screen on a mode change, and that landed after the automation's own navigate | Restore the mode, wait 1 s, then navigate | History of `sensor.vaca_…_current_path` showed the right view for under a millisecond |
-| Medium camera entities flip to `unavailable` after a live view | Home Assistant's HLS stream worker cannot open that camera's RTSPS stream and retries with a growing delay; WebRTC on the display still works | Not fixed. Reload the UniFi Protect integration to clear it | `system_log/list` and the entity's history |
+| Camera entities flip to `unavailable` after a live view | Home Assistant 2026.10.0 ships FFmpeg 9, which rejects Protect's self-signed RTSPS certificate, so the HLS stream worker fails for every camera; WebRTC on the display still works | Update to 2026.10.1 or later. Until then `ha/protect_stream_workaround.py` reloads the integration after a drop | `system_log/list`; requesting `camera/stream` for a healthy camera broke it too; `ffmpeg -i rtsps://…` printed "Peer certificate failed verification"; core issue 184775 |
 | Music "playing" but silent | IoT VLAN could not reach Music Assistant's stream port 8097 | Firewall rule | `logcat` showed the stream URL; `curl` to 8097 from the device returned nothing |
 | Rocker not loud enough | Android media stream was at 40 of 100 underneath the player's volume | Drive the stream itself | `dumpsys audio` |
 | Rocker steps uneven | Android's volume curve | 3 dB table | `dumpsys media.audio_policy` |
@@ -949,6 +954,8 @@ setting in step 17.
 - **Stop cameras taking over the screen:** disable or delete the "Smart Display - Show
   camera on detection or doorbell" automation and the
   `input_text.den_display_takeover_return` helper.
+- **After updating Home Assistant to 2026.10.1 or later:** delete the "Smart Display -
+  Reload Protect when a camera drops" automation.
 - **Remove the button watcher:** delete `/system/bin/volkeys.sh` and
   `/system/etc/init/volkeys.rc`, and the "Smart Display - Volume buttons" automation.
 - **Stock firmware:** flash the user build to the active slot and relock AVB with
