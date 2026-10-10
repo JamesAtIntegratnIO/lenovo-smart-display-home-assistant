@@ -476,6 +476,10 @@ The app shows a blue "Waiting for connection" screen with its IP and port (10800
 4. Add integration > **View Assist**. The first run creates a "Master Configuration"
    entry (submit the empty form). Add it again, choose type `vaca`, name it
    (here "Den display") and pick the VACA device. This step only works after step 3.
+   Choose the name with care: the sensor's unique id is built from it (`Den display_vasensor`),
+   so renaming it later in Main config makes a new `sensor.*` entity and orphans the old one.
+   This display moved to the kitchen; see "Renaming the display" in step 15 for how it was
+   renamed to "Kitchen display" without that.
 5. HACS (frontend): install **button-card**, **layout-card** and **card-mod**. View
    Assist's own screens show "Configuration error" without them. No restart needed.
 
@@ -504,7 +508,7 @@ python3 ha/ha_rest.py POST /api/services/select/select_option '{"entity_id":"sel
 python3 ha/ha_rest.py POST /api/services/number/set_value '{"entity_id":"number.vaca_ha0000xx_mic_gain","value":5}'
 ```
 
-**10d. View Assist display options** (the "Den display" entry > Configure > Dashboard options):
+**10d. View Assist display options** (the "Kitchen display" entry > Configure > Dashboard options):
 
 | Option | Value |
 |---|---|
@@ -761,7 +765,7 @@ Internal-to-IOT allow already covered it.
    and sign in. Requires Premium.
    **Not** "Spotify Connect" under plugins, and not Home Assistant's own Spotify
    integration: neither can search the catalogue, so voice requests find nothing.
-6. In View Assist's "Den display" entry > Configure > Main config, set **Music player
+6. In View Assist's "Kitchen display" entry > Configure > Main config, set **Music player
    device** to `media_player.vaca_ha0000xx_media_player_2`.
 7. Open the firewall port from step 13.3.
 8. Create the music blueprint automation (step 12e).
@@ -794,6 +798,11 @@ A healthy run logs `Playing music: http://<ha>:8097/single/…`, an `AudioTrack`
    - reconfigures the Claude conversation agent: the prompt in the file, model
      `claude-haiku-5-5`, max tokens 1024, web search on with at most 2 uses, user
      location on;
+   - `python3 ha/phone_link_tool.py` creates `script.send_link_to_phone` ("Send a link to
+     the owner's phone", fields `url`, `title`, `summary`) and exposes it to voice. It calls
+     `notify.mobile_app_your_phone` with the page as the notification's tap action
+     and an "Open" button, refuses anything that is not an http(s) address, and returns
+     whether it sent. Change `NOTIFY` in the file for a different phone;
    - (the two ids `ENTRY` and `SUB` near the bottom are this install's config entry and
      subentry ids; get yours from `config_entries/get` and `config_entries/subentries/list`).
 4. Expose the script and the player to voice (Settings > Voice assistants > Expose), or:
@@ -821,6 +830,28 @@ for these rather than guess an artist or playlist itself.
 song every time; an album or a single track plays in order. The blueprint's local phrases
 never set shuffle and the queue keeps whatever the last request left, hence the small
 automation that turns it on whenever the blueprint fires.
+
+**Recipes and other lookups.** Asked "how do I make peach cobbler", the agent used to recite a
+generic recipe from memory. The prompt now makes it web search for recipes, how-tos and
+product picks, answer from one specific well-known page, name the site and the recipe with a
+one-sentence summary, and call "Send a link to the owner's phone" with that page's exact address.
+Two details matter. Home Assistant speaks only the text that follows the last tool call, so
+the prompt tells the agent to send the link first and put the whole answer after it; in the
+first attempt it named the source before the call and all that was spoken was "The link is on
+the owner's phone." And the address must come from the search results, never be composed, which
+the script's field description repeats. Haiku 5.5 does this in 5 to 8 seconds and picked real
+pages (Add a Pinch, Food Network, The Kitchn, Bissell) in testing, so a larger model was not
+needed. Every such request sends a notification; there is one phone registered, so links go
+to that phone whoever is asking.
+
+**Renaming the display.** The display moved from the den to the kitchen on 2026-10-10. Only
+names were changed, by entity registry name override or alias, so every entity id, webhook id
+and automation reference is as before: the View Assist entry title and `sensor.den_display`'s
+name, the Music Assistant player's name (the one the AI is told to use), the play-music
+script's alias, the takeover helper's name, and the old Google cast device. The three devices
+were also put in the Kitchen area. View Assist's own `name` attribute still reads "Den
+display" because changing it changes the sensor's unique id. `input_text/update` resets any
+field it is not given, so resend `max: 255` and the icon when renaming that helper.
 
 **Why the prompt says what it says.** A request answered by a sentence-trigger automation
 appears in the AI's conversation history as an assistant reply with no tool call behind
@@ -989,7 +1020,7 @@ $A shell "dumpsys activity activities | grep mResumedActivity"       # com.msp19
 $A shell "curl -s -o /dev/null -m 6 -w \"%{http_code} %{time_total}s\n\" http://10.0.1.174:8123/manifest.json"   # 200, well under 1 s
 $A shell "curl -s -o /dev/null -m 6 -w \"%{http_code}\n\" http://10.0.1.174:8097/"                               # 404 (reachable)
 $A shell "top -b -n 1 | sed -n 4p"                                    # mostly idle
-$AVB_PYTHON ha/ask.py "set a timer for 1 minute" "show me my timers" "how are the seahawks doing" "show me the front driveway" "go home" "what is the tallest mountain in Washington state"'
+$AVB_PYTHON ha/ask.py "set a timer for 1 minute" "show me my timers" "how are the seahawks doing" "show me the front driveway" "go home" "what is the tallest mountain in Washington state" "how do I make peach cobbler"'   # the last one names a site and notifies the phone
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://10.0.1.174:8123/api/webhook/den_display_volume_up   # 200, volume moves one position
 ```
 
@@ -1040,12 +1071,13 @@ setting in step 17.
 | Home Assistant | `http://10.0.1.174:8123`, version 2026.10.0 |
 | Admin computer wired MAC | `aa:bb:cc:dd:ee:02` |
 | VACA device name / id suffix | `vaca_ha0000xx` |
-| View Assist device entity | `sensor.den_display` |
+| View Assist device entity | `sensor.den_display` (named "Kitchen display") |
+| Phone notify service | `notify.mobile_app_your_phone` |
 | VACA device id (for `ask.py`) | `549c40def793d18c19283c0859c88c68` |
 | Voice pipeline id | `01hmmxp6jjc996mawjb5xzepfg` ("Home Assistant Cloud") |
 | Music Assistant config entry | `01M4HGGHSCR4A11QKH597KY6KP` |
 | Music player entity | `media_player.vaca_ha0000xx_media_player_2` |
-| View Assist "Den display" entry | `01M4HF6Y2MTWS5BRJFANZTX1YZ` |
+| View Assist "Kitchen display" entry | `01M4HF6Y2MTWS5BRJFANZTX1YZ` |
 | Anthropic entry / conversation subentry | `01M4HGNSMY8B0C54JP827YY0FJ` / `01M4HGNSMYM66CB3PQENA3K3ZZ` |
 | Volume GPIOs | 429 up, 576 down |
 | UniFi policies | "Allow admin Mac to Smart Display adb", "Block Internal to Smart Display adb", "Allow IOT to Home Assistant" |

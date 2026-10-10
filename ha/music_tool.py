@@ -47,8 +47,8 @@ def player(action, data):
 
 
 script = {
-    "alias": "Play music on the den display",
-    "description": ("Search Spotify through Music Assistant and start playing on the den display's speaker. Use this "
+    "alias": "Play music on the kitchen display",
+    "description": ("Search Spotify through Music Assistant and start playing on the kitchen display's speaker. Use this "
                     "for any request to play music: an artist, a song, an album, a named playlist, or a genre, era "
                     "or mood. This is the only way to start music. It returns what it started; say that."),
     "icon": "mdi:music",
@@ -93,6 +93,8 @@ script = {
         {"stop": "started", "response_variable": "result"},
     ],
 }
+# The script and the View Assist sensor keep their original "den_display" ids (the display was first
+# named for the den); only the names people and the AI see say kitchen.
 print("script:", rest("POST", "/api/config/script/config/den_display_play_music", script))
 
 # The local phrases ("play music by X", "start the X playlist") are View Assist's blueprint, which
@@ -106,14 +108,18 @@ print("shuffle:", rest("POST", "/api/config/automation/config/smart_display_shuf
     "actions": [player("media_player.shuffle_set", {"shuffle": True})],
     "mode": "single"}))
 
-prompt = """You are the voice assistant for this home, speaking through a smart display in the den.
+# This is the agent's whole prompt, not just the music part: phone_link_tool.py creates the
+# "Send a link to the owner's phone" script the recipes paragraph refers to.
+prompt = """You are the voice assistant for this home, speaking through a smart display in the kitchen.
 Answer in one or two short spoken sentences in plain text. No markdown, lists or emoji.
 Use the available tools to control or check devices, and never say a device changed unless the tool call succeeded.
 For anything current (sports schedules and scores, weather beyond the home sensors, news), look it up rather than guessing, and say so briefly if you could not find it.
 
 Some requests are handled before they reach you by automations in this home: timers and alarms, showing cameras, sports scores, switching screens, and fixed music phrases such as "play music by ...". Their replies appear earlier in this conversation as assistant messages without any tool call. Those actions really happened. Never retract, correct or apologise for them.
 
-Music: to play anything, call the "Play music on the den display" script. It searches Spotify. Always set its media type. When what was asked for is a genre, style, era, decade, mood or activity (oldies, country, 80s rock, jazz, something relaxing, dinner music), use the media type "genre" with the plain genre name as the query, and never guess an artist or playlist for it yourself. Use "artist", "album", "track" or "playlist" only when that is what was named. Then say what the script reports it started. Music plays on the den display itself, whose player is named "Den display"; use that player to pause, resume, skip or stop. Do not use the Spotify or TV media players for music requests unless asked by name.
+Music: to play anything, call the "Play music on the kitchen display" script. It searches Spotify. Always set its media type. When what was asked for is a genre, style, era, decade, mood or activity (oldies, country, 80s rock, jazz, something relaxing, dinner music), use the media type "genre" with the plain genre name as the query, and never guess an artist or playlist for it yourself. Use "artist", "album", "track" or "playlist" only when that is what was named. Then say what the script reports it started. Music plays on the kitchen display itself, whose player is named "Kitchen display"; use that player to pause, resume, skip or stop. Do not use the Spotify or TV media players for music requests unless asked by name.
+
+Recipes, how-tos, product picks and other general "how do I" or "what is a good" requests: always run a web search first and answer from one specific, popular, well-regarded page it returns, not from your own knowledge. Before you say anything, call the "Send a link to the owner's phone" script with that page's exact address from the search results; never send a home page or an address you wrote yourself. Only what you say after the last tool call is spoken, so put the whole answer there: which site it is from and the name of the recipe or article, one sentence on what it is (for a recipe, the main ingredients and roughly how long it takes), and that the link is on the owner's phone. If the search fails, say so instead of answering from memory, and if the script reports it did not send, say that.
 
 The household's NFL team is the Seattle Seahawks.
 The current time is {{ now().strftime('%A, %B %-d %Y, %-I:%M %p') }}.

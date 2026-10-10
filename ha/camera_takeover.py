@@ -41,8 +41,12 @@ def ha(method, path, body=None):
 
 
 if '"http_error"' in ha("GET", f"/api/states/{RETURN_HELPER}"):
-    msg = {"type": "input_text/create", "name": "Den display takeover return", "max": 255, "icon": "mdi:cctv"}
-    print(subprocess.run([sys.executable, "ha/ha_ws.py", "call", json.dumps(msg)], capture_output=True, text=True).stdout)
+    # Created under the display's first name so the entity id stays input_text.den_display_takeover_return
+    # (the display moved to the kitchen; ids were kept), then given the name people see.
+    for msg in ({"type": "input_text/create", "name": "Den display takeover return", "max": 255, "icon": "mdi:cctv"},
+                {"type": "input_text/update", "input_text_id": "den_display_takeover_return",
+                 "name": "Kitchen display takeover return", "max": 255, "icon": "mdi:cctv"}):
+        print(subprocess.run([sys.executable, "ha/ha_ws.py", "call", json.dumps(msg)], capture_output=True, text=True).stdout)
 
 triggers = [{"trigger": "state", "entity_id": DOORBELL_RING, "id": DOORBELL_CAMERA,
              "not_from": ["unavailable"], "not_to": ["unavailable", "unknown"]}]
@@ -104,7 +108,7 @@ actions = [
 ]
 
 config = {"alias": "Smart Display - Show camera on detection or doorbell",
-          "description": "Person or vehicle on a camera, or a doorbell ring, shows that camera on the Den display, "
+          "description": "Person or vehicle on a camera, or a doorbell ring, shows that camera on the Kitchen display, "
                          f"then returns to the previous view {CLEAR_SECONDS} seconds after it clears",
           "triggers": triggers, "conditions": conditions, "actions": actions, "mode": "restart"}
 print(ha("POST", "/api/config/automation/config/smart_display_camera_takeover", config))

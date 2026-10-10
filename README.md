@@ -5,7 +5,10 @@ Android Things firmware and turned into a Home Assistant dashboard and voice sat
 Built on 2026-10-09 from the XDA thread
 <https://xdaforums.com/t/cd-17302f-lenovo-smart-display-7-ivy-avb-bootloader-unlock-firmware.4472041/>.
 
-In Home Assistant the device is "Den display".
+In Home Assistant the device is "Kitchen display" and sits in the Kitchen area. It was first
+named "Den display", and the entity ids still say so (`sensor.den_display`,
+`script.den_display_play_music`, `input_text.den_display_takeover_return`, the
+`den_display_volume_*` webhooks): only the names were changed, so nothing that refers to an id broke.
 
 **To repeat this build from scratch, follow [BUILD-GUIDE.md](BUILD-GUIDE.md).** It has every command in order, the problems hit, and the sources. This README is the short reference.
 
@@ -22,6 +25,8 @@ In Home Assistant the device is "Den display".
   text-to-speech, local phrases first, Claude (Haiku 5.5 with web search) for everything else.
 - **By voice**: timers and alarms, cameras by name, NFL scores (Seahawks by default),
   screen navigation, Spotify through Music Assistant.
+- **Recipes and how-tos**: "how do I make peach cobbler" is web searched, answered from one
+  named site with a one-line summary, and the page is sent to the owner's phone as a notification.
 - **Cameras come to you**: a person or vehicle on a UniFi Protect camera, or a ring of the
   doorbell, puts that camera on the screen. It goes back to what it was showing 30 seconds
   after the camera is clear.
@@ -61,7 +66,8 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
 | `ha/hls_guard.py`, `ha/frontend/hls_guard.js` | Temporary: stops live camera views from exhausting the display browser's connections on Home Assistant 2026.10.0. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
-| `ha/music_tool.py` | The "play music" script the AI calls (genres resolve to Spotify's own playlists), the shuffle automation, and the AI agent's prompt and settings. |
+| `ha/music_tool.py` | The "play music" script the AI calls (genres resolve to Spotify's own playlists), the shuffle automation, and the AI agent's whole prompt and settings. |
+| `ha/phone_link_tool.py` | The "Send a link to the owner's phone" script the AI calls after a web search for a recipe or how-to. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
 | `device/volkeys.sh`, `device/volkeys.rc` | Volume button watcher installed on the display and its boot entry. |
 | `downloads/` | Firmware zip, AVB unlock tool, APKs, and a backup of the stock WebView. Not in git. |
@@ -106,12 +112,12 @@ refresh it if the Overview's quick actions or roof themes change.
   button-card, layout-card, card-mod.
 - **Add-on**: Music Assistant, with Spotify as a music source and the display added through
   the "Home Assistant MediaPlayers" player provider.
-- **Integrations**: VACA device at `192.168.9.253:10800`; View Assist device "Den display"
+- **Integrations**: VACA device at `192.168.9.253:10800`; View Assist device "Kitchen display"
   (home `/smart-display/home`, music `/smart-display/music`, header and sidebar hidden);
   TeamTracker sensors `sensor.seahawks` and `sensor.team_tracker`; Anthropic ("Claude").
 - **Voice pipeline** "Home Assistant Cloud": conversation agent Claude, prefer local intents on.
-- **Exposed to voice** in addition to the defaults: the display's Music Assistant player
-  and `script.den_display_play_music`.
+- **Exposed to voice** in addition to the defaults: the display's Music Assistant player,
+  `script.den_display_play_music` and `script.send_link_to_phone`.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
 - **Automations**: three "View Assist - …" blueprint instances and six "Smart Display - …"
   ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,

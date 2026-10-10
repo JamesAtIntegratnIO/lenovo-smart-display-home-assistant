@@ -6,7 +6,7 @@
 import asyncio, json, pathlib, sys, time, websockets
 TOKEN = pathlib.Path("~/.hass_token").expanduser().read_text().strip()
 PIPELINE = "01hmmxp6jjc996mawjb5xzepfg"   # Home Assistant Cloud
-DEVICE = "549c40def793d18c19283c0859c88c68"  # Den display
+DEVICE = "549c40def793d18c19283c0859c88c68"  # Kitchen display (VACA device)
 
 async def ask(text):
     async with websockets.connect("ws://10.0.1.174:8123/api/websocket", max_size=None) as ws:

@@ -33,7 +33,7 @@ position = ("{% set levels = " + str(LEVELS) + " %}"
 level = "{{ " + str(LEVELS) + "[position | int] }}"
 config = {
     "alias": "Smart Display - Volume buttons",
-    "description": "Physical volume buttons on the den display set one system-wide volume: music, spoken replies and alarms",
+    "description": "Physical volume buttons on the kitchen display set one system-wide volume: music, spoken replies and alarms",
     "triggers": [
         {"trigger": "webhook", "id": "up", "webhook_id": "den_display_volume_up",
          "allowed_methods": ["POST"], "local_only": True},
