@@ -24,6 +24,18 @@ In Home Assistant the device is "Den display".
   screen navigation, Spotify through Music Assistant.
 - **Physical volume rocker** sets one system-wide volume in ten 3 dB positions.
 
+## Screenshots
+
+Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
+
+| Music, opened by a voice request | Sports |
+|---|---|
+| ![Music view with the now-playing card and system volume](docs/images/music.png) | ![Sports view with the TeamTracker game card](docs/images/sports.png) |
+
+| Outside lights and roof themes | Home (left half) |
+|---|---|
+| ![Outside view with exterior lights and roof theme buttons](docs/images/outside.png) | ![Home view: navigation row, clock, thermostat and timers card](docs/images/home.png) |
+
 ## Layout of this folder
 
 | Path | What it is |
