@@ -234,9 +234,19 @@ music = {
     ],
 }
 
+# ---------------------------------------------------------------- Screen saver
+# Full-screen photo slideshow. Not in the navigation row: the "Smart Display - Screen saver"
+# automation (ha/screen_saver.py) opens it when nobody is there. The card is ha/frontend/kitchen_saver.js.
+saver = {
+    "title": "Screen saver", "path": "saver", "icon": "mdi:image-multiple", "type": "panel",
+    "cards": [{"type": "custom:kitchen-saver-card", "interval": 20, "fade": 2, "device": "sensor.den_display",
+               # stop changing pictures while the backlight is off
+               "pause_entity": "number.vaca_ha0000xx_screen_brightness"}],
+}
+
 views = [home, lights, cameras, outside, music, media, sports]
 for v in views:
     v["sections"].insert(0, nav_strip(v["path"]))
-config = {"views": views}
+config = {"views": views + [saver]}
 yaml.safe_dump(config, open(sys.argv[2], "w"), sort_keys=False, allow_unicode=True, width=120)
 print("views:", ", ".join(v["path"] for v in config["views"]))

@@ -31,6 +31,10 @@ named "Den display", and the entity ids still say so (`sensor.den_display`,
   doorbell, puts that camera on the screen. It goes back to what it was showing 30 seconds
   after the camera is clear.
 - **Physical volume rocker** sets one system-wide volume in ten 3 dB positions.
+- **Burn-in protection**: after 5 minutes with nobody at it, a full-screen photo slideshow
+  (a shared Google Photos album, with a small clock that changes corner with every picture).
+  After 30 more minutes the screen dims for a minute and the backlight goes off. A touch, the
+  wake word, the volume rocker or a camera event brings it back to the view it was on.
 
 ## Screenshots
 
@@ -46,9 +50,9 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 |---|---|
 | ![Outside view with exterior lights and roof theme buttons](docs/images/outside.png) | ![Lights view: lights and fans grouped by area](docs/images/lights.png) |
 
-| Cameras (pictures blurred for privacy) | |
+| Cameras (pictures blurred for privacy) | Screen saver (placeholder photo) |
 |---|---|
-| ![Cameras view: a 2x2 grid of camera snapshots, blurred](docs/images/cameras.png) | |
+| ![Cameras view: a 2x2 grid of camera snapshots, blurred](docs/images/cameras.png) | ![Screen saver: a full-screen photo with a small clock in one corner](docs/images/saver.png) |
 
 ## Layout of this folder
 
@@ -66,6 +70,8 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
 | `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
 | `ha/hls_guard.py`, `ha/frontend/hls_guard.js` | Temporary: stops live camera views from exhausting the display browser's connections on Home Assistant 2026.10.0. |
+| `ha/screen_saver.py`, `ha/frontend/kitchen_saver.js` | Burn-in protection: the activity and screen saver automations, their two helpers, and the slideshow card. Timings are constants at the top of the script. |
+| `ha/photo_album.py`, `ha/album_sync.py` | The slideshow's photos: a helper holding one shared Google Photos album link, and the script Home Assistant runs every 6 hours to copy that album to `/config/www/kitchen_display/`. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
 | `ha/music_tool.py` | The "play music" script the AI calls (genres resolve to Spotify's own playlists), the shuffle automation, and the AI agent's whole prompt and settings. |
 | `ha/phone_link_tool.py` | The "Send a link to the owner's phone" script the AI calls after a web search for a recipe or how-to. |
@@ -106,6 +112,8 @@ refresh it if the Overview's quick actions or roof themes change.
 9. Landscape: VACA's screen orientation setting is `landscape` (an earlier `settings put system user_rotation 1` is no longer what holds it).
 10. `/system/bin/volkeys.sh` and `/system/etc/init/volkeys.rc` from `device/`.
 11. Brightness: `settings put system screen_auto_brightness_adj 0.7` (brighter, flatter curve).
+12. `appops set com.msp1974.vacompanion WRITE_SETTINGS allow`, so VACA's brightness entities
+    really move the backlight (the screen saver turns it off through them).
 
 ## What was done in Home Assistant
 
@@ -120,12 +128,18 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Exposed to voice** in addition to the defaults: the display's Music Assistant player,
   `script.den_display_play_music` and `script.send_link_to_phone`.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
-- **Automations**: three "View Assist - …" blueprint instances and six "Smart Display - …"
+- **Automations**: three "View Assist - …" blueprint instances and nine "Smart Display - …"
   ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,
-  sports default team, and a temporary one that reloads UniFi Protect when a camera drops;
-  see `ha/`).
-- **Helper**: `input_text.den_display_takeover_return`, where the camera automation keeps
-  the view to go back to.
+  sports default team, activity, screen saver, refresh photo album, and a temporary one that
+  reloads UniFi Protect when a camera drops; see `ha/`).
+- **Helpers**: `input_text.den_display_takeover_return`, where the camera automation keeps
+  the view to go back to; `input_button.kitchen_display_activity` (pressed on every sign of
+  life at the display), `input_text.kitchen_display_saver_return` and
+  `input_text.kitchen_display_album_url` (the one setting for the slideshow's photos).
+- **Package** `/config/packages/kitchen_display.yaml`: the command-line sensor
+  `sensor.kitchen_display_album` that syncs the album; the script it runs is
+  `/config/kitchen_display/album_sync.py`.
+- **Dashboard resource**: `ha/frontend/kitchen_saver.js`, registered as a `data:` URL.
 - **Camera entities**: the four "Medium resolution channel" UniFi Protect cameras enabled,
   because the display decodes at most 1920x1088 H.264.
 - **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 5,
@@ -172,6 +186,16 @@ refresh it if the Overview's quick actions or roof themes change.
   refuses HLS on the display only, so live views use WebRTC alone. Run
   `ha/hls_guard.py remove` after updating. Found with the WebView's remote debugger
   (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`).
+- **The camera is there but VACA cannot use it yet.** The camera HAL reports the display's
+  only camera as back-facing; VACA's motion detection asks CameraX for a front camera and
+  gets "No available camera can be found". Until that is fixed (BUILD-GUIDE step 17a), the
+  screen saver knows about people only from touch, voice and the volume rocker.
+- **VACA's brightness entities do nothing until the app may write system settings**
+  (`appops set … WRITE_SETTINGS allow`). After that, brightness 0 is backlight off.
+- **VACA's "Screen" switch only draws a black overlay** on this device, and a tap does not
+  clear it. Its "Screen saver" switch is a black overlay a tap does clear, but it holds the
+  backlight at 2 of 255. Brightness 0 with the page still up is darker and still takes a touch.
+- **`view_assist.navigate` with `revert_timeout: 0` holds a view** without changing the mode.
 - A fixed phrase answered by an automation appears to the AI as a reply with no tool call.
   Its prompt has to say those are real, or it "corrects" them.
 
@@ -188,3 +212,9 @@ refresh it if the Overview's quick actions or roof themes change.
 - That the brightness setting survives a reboot.
 - NFL teams other than the Seahawks, 49ers and Cowboys by voice.
 - `ha/blueprint_automations.py` as a script (the automations it describes exist and work).
+- Presence by camera: blocked on the camera HAL change in BUILD-GUIDE step 17a.
+- The album sync against a real shared album. It ran with placeholder photos, and its error
+  paths ran against a dead album link; the page pattern is from other tools' descriptions.
+- Waking the screen saver with the spoken wake word (touch, the volume webhook and a camera
+  takeover were tested on the device; `ha/ask.py` does not go through the satellite).
+- That the `WRITE_SETTINGS` permission survives a reboot.
