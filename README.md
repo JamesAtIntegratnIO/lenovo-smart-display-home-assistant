@@ -81,7 +81,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/music_tool.py` | The "play music" script the AI calls (genres resolve to Spotify's own playlists), the shuffle automation, and the AI agent's whole prompt and settings. |
 | `ha/phone_link_tool.py` | The "Send a link to the owner's phone" script the AI calls after a web search for a recipe or how-to. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
-| `device/lightsense.sh`, `device/lightsense.rc` | Reports the display's ambient light reading to Home Assistant. Written, not installed on the display yet. |
+| `device/lightsense.sh`, `device/lightsense.rc` | Reports the display's ambient light reading to Home Assistant, started at boot. |
 | `device/volkeys.sh`, `device/volkeys.rc` | Volume button watcher installed on the display and its boot entry. |
 | `downloads/` | Firmware zip, AVB unlock tool, APKs, and a backup of the stock WebView. Not in git. |
 | `work/` | Scratch: screenshots, logs, probe scripts. Not in git. |
@@ -224,14 +224,13 @@ refresh it if the Overview's quick actions or roof themes change.
 - That the brightness setting survives a reboot.
 - NFL teams other than the Seahawks, 49ers and Cowboys by voice.
 - `ha/blueprint_automations.py` as a script (the automations it describes exist and work).
-- The light sensor route end to end: `device/lightsense.sh` is not installed, so dark and
-  bright currently follow the sun. The thresholds were tested by posting readings by hand.
+- The light sensor through a real nightfall. The reporter runs and its readings arrive, but
+  the dark and bright thresholds have only been tested by posting readings by hand.
 - The dark clock in a really dark room (it was forced on in daylight), and whether the
   camera stays quiet enough at night for the bright-room case.
-- The saver appearing on its own in daylight. Both faces, the switch between them, a camera
-  takeover from the saver and back, and a touch were tested by starting the saver by hand.
-  Left alone, the camera reported motion about once a minute or more for half an hour, so
-  five idle minutes never came; whether that was people or something else in view is open.
+- How close someone has to be for the camera to wake the saver at sensitivity 20. It starts
+  by itself after five quiet minutes and someone in the room wakes it; the distance was not
+  measured.
 - Waking the saver with the spoken wake word (touch, the volume webhook and a camera
   takeover were tested on the device; `ha/ask.py` does not go through the satellite).
 - "face" detection mode, and a real doorbell press while the saver is up.

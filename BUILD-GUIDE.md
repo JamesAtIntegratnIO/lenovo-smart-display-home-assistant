@@ -1040,7 +1040,12 @@ The sensor turns on for 5 to 10 seconds per motion event and off again, so with 
 the room it flips every few seconds. That needs no debounce: every "on" restarts the idle
 count, and the saver wants five minutes without one. The other side of that is that anything
 in the camera's view that keeps moving (a fan, a window, a television) keeps the saver away
-for as long as the room is bright; lower the sensitivity or use "face" if that happens.
+for as long as the room is bright. That happened here at VACA's default sensitivity of 70:
+an hour without one five-minute gap, most of it with nobody there. Counted over four minutes
+each: 10 events at 70, 4 at 40, none at 15, none in "face" mode (which costs more, VACA at
+about 68% of a core against 40%). `MOTION_SENSITIVITY = 20` in `ha/screen_saver.py` is what
+runs now; with it the saver started by itself after five quiet minutes and a person walking
+in still woke it.
 
 Dead end worth knowing: `NSCamCustomSensor::getSensorFacingDirection` in
 `libcameracustom.so` looks like the place (a table of back, front, back) but changing it
@@ -1078,8 +1083,9 @@ adb reboot
 In Home Assistant, "Smart Display - Light level" keeps `input_boolean.kitchen_display_dark`
 in step: on below 3 lx, off above 8 lx, unchanged in between so it cannot flap. If no
 reading has arrived for 15 minutes it uses the sun instead (dark when more than 4 degrees
-below the horizon). **On this build the reporter is not installed yet, so it is running on
-the sun.** The thresholds were checked by posting readings to the webhook by hand:
+below the horizon). After the reboot `getprop init.svc.lightsense` says `running` and the
+first reading arrives within half a minute of boot. The thresholds were checked by posting
+readings to the webhook by hand:
 
 ```bash
 curl -X POST -H 'Content-Type: application/json' -d '{"lux": 1}' http://10.0.1.174:8123/api/webhook/kitchen_display_lux

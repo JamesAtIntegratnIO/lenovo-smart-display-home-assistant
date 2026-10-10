@@ -27,7 +27,7 @@ Creates (repeatable):
   - input_boolean.kitchen_display_dark         the room is dark
   - the dashboard resource ha/frontend/kitchen_saver.js (the card, touch reporting)
   - automations "Smart Display - Activity", "Smart Display - Screen saver", "Smart Display - Light level"
-and turns on VACA's camera motion detection (MOTION_MODE).
+and turns on VACA's camera motion detection (MOTION_MODE, MOTION_SENSITIVITY).
 
 The camera takeover (ha/camera_takeover.py) always wins: it navigates away, this automation
 sees the view change and stands down. Do Not Disturb is not involved. The saver view itself
@@ -48,6 +48,7 @@ BRIGHT_LUX = 8           # room light above this: photo slideshow (in between: n
 LUX_STALE_MINUTES = 15   # no light reading for this long: let the sun decide
 SUN_DARK_DEGREES = -4    # sun elevation below this counts as dark when there is no reading
 MOTION_MODE = "motion"   # VACA camera detection: "motion", "face" or "none"
+MOTION_SENSITIVITY = 20  # 0-100. At VACA's default of 70 an empty, bright kitchen read as motion two or three times a minute
 
 DEV = "vaca_ha0000xx"
 DISPLAY = "sensor.den_display"
@@ -233,6 +234,8 @@ def main():
     asyncio.run(resource(True))
     print(ha("POST", "/api/services/select/select_option",
              {"entity_id": f"select.{DEV}_motion_detection", "option": MOTION_MODE}))
+    print(ha("POST", "/api/services/number/set_value",
+             {"entity_id": f"number.{DEV}_motion_detection_sensitivity", "value": MOTION_SENSITIVITY}))
     print(ha("POST", "/api/config/automation/config/smart_display_activity", activity))
     print(ha("POST", "/api/config/automation/config/smart_display_screen_saver", saver))
     print(ha("POST", "/api/config/automation/config/smart_display_light_level", light))
