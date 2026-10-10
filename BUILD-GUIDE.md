@@ -1029,8 +1029,18 @@ After the reboot `ha/screen_saver.py` (or the select entity) turns detection on,
 binary sensor follows people in front of the display: on for 10 seconds per motion event.
 
 Cost, measured: VACA goes from about 12% to about 75% of one core and the camera service
-adds about 15% (the preview runs at 800x600). Total idle stays near 290 of 400%, and gateway
-ping stays in the tens of milliseconds, unlike openWakeWord. "face" mode was not measured.
+adds about 15% (the preview runs at 800x600) in the first minutes after boot. Twenty minutes
+after boot it had settled to about 40% for VACA and 13% for the camera service, with two of
+the four cores parked and those two about 45% busy; ping to Home Assistant stays in the tens
+of milliseconds, unlike openWakeWord. The load average reads 7 or more regardless: this
+kernel counts its own sleeping threads, so judge by `/proc/stat` instead. "face" mode was not
+measured.
+
+The sensor turns on for 5 to 10 seconds per motion event and off again, so with someone in
+the room it flips every few seconds. That needs no debounce: every "on" restarts the idle
+count, and the saver wants five minutes without one. The other side of that is that anything
+in the camera's view that keeps moving (a fan, a window, a television) keeps the saver away
+for as long as the room is bright; lower the sensitivity or use "face" if that happens.
 
 Dead end worth knowing: `NSCamCustomSensor::getSensorFacingDirection` in
 `libcameracustom.so` looks like the place (a table of back, front, back) but changing it

@@ -201,7 +201,7 @@ refresh it if the Overview's quick actions or roof themes change.
   (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`).
 - **VACA's camera motion detection needs a front camera, and this HAL says "back".** The
   facing is one byte of static metadata in `libcam.metadataprovider.so` (BUILD-GUIDE step
-  17a.1). Detection then costs about 0.8 of one core.
+  17a.1). Detection then costs about half of one core once boot has settled (0.9 at first).
 - **VACA's brightness entities do nothing until the app may write system settings**
   (`appops set … WRITE_SETTINGS allow`). After that, brightness 0 is backlight off.
 - **VACA's "Screen" switch only draws a black overlay** on this device, and a tap does not
@@ -228,6 +228,10 @@ refresh it if the Overview's quick actions or roof themes change.
   bright currently follow the sun. The thresholds were tested by posting readings by hand.
 - The dark clock in a really dark room (it was forced on in daylight), and whether the
   camera stays quiet enough at night for the bright-room case.
+- The saver appearing on its own in daylight. Both faces, the switch between them, a camera
+  takeover from the saver and back, and a touch were tested by starting the saver by hand.
+  Left alone, the camera reported motion about once a minute or more for half an hour, so
+  five idle minutes never came; whether that was people or something else in view is open.
 - Waking the saver with the spoken wake word (touch, the volume webhook and a camera
   takeover were tested on the device; `ha/ask.py` does not go through the satellite).
 - "face" detection mode, and a real doorbell press while the saver is up.
