@@ -1043,9 +1043,12 @@ in the camera's view that keeps moving (a fan, a window, a television) keeps the
 for as long as the room is bright. That happened here at VACA's default sensitivity of 70:
 an hour without one five-minute gap, most of it with nobody there. Counted over four minutes
 each: 10 events at 70, 4 at 40, none at 15, none in "face" mode (which costs more, VACA at
-about 68% of a core against 40%). `MOTION_SENSITIVITY = 20` in `ha/screen_saver.py` is what
-runs now; with it the saver started by itself after five quiet minutes and a person walking
-in still woke it.
+about 68% of a core against 40%). At 20 the saver started by itself after five quiet
+minutes, but someone moving six feet away woke it, and the display should only react to a
+touch, a voice command or someone right at it. `MOTION_SENSITIVITY = 8` in
+`ha/screen_saver.py` is what runs now. The distance at which 8 still sees a person has to be
+found by standing in front of it; lower it further, or set `MOTION_MODE = "none"` for touch
+and voice only, if it still wakes from across the room.
 
 Dead end worth knowing: `NSCamCustomSensor::getSensorFacingDirection` in
 `libcameracustom.so` looks like the place (a table of back, front, back) but changing it

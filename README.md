@@ -228,9 +228,9 @@ refresh it if the Overview's quick actions or roof themes change.
   the dark and bright thresholds have only been tested by posting readings by hand.
 - The dark clock in a really dark room (it was forced on in daylight), and whether the
   camera stays quiet enough at night for the bright-room case.
-- How close someone has to be for the camera to wake the saver at sensitivity 20. It starts
-  by itself after five quiet minutes and someone in the room wakes it; the distance was not
-  measured.
-- Waking the saver with the spoken wake word (touch, the volume webhook and a camera
-  takeover were tested on the device; `ha/ask.py` does not go through the satellite).
+- How close someone has to be for the camera to wake the saver at sensitivity 8. At 20 it
+  woke from six feet away, which was too far; 8 has not been checked with a person yet.
+- Waking the saver with the spoken wake word. A spoken announcement through the satellite
+  woke it, as did a touch, the volume webhook and a camera takeover; the wake word itself
+  goes the same way but was not spoken at it.
 - "face" detection mode, and a real doorbell press while the saver is up.

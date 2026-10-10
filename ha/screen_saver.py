@@ -48,7 +48,7 @@ BRIGHT_LUX = 8           # room light above this: photo slideshow (in between: n
 LUX_STALE_MINUTES = 15   # no light reading for this long: let the sun decide
 SUN_DARK_DEGREES = -4    # sun elevation below this counts as dark when there is no reading
 MOTION_MODE = "motion"   # VACA camera detection: "motion", "face" or "none"
-MOTION_SENSITIVITY = 20  # 0-100. At VACA's default of 70 an empty, bright kitchen read as motion two or three times a minute
+MOTION_SENSITIVITY = 8   # 0-100. Low on purpose: only someone right at the display should count. At VACA's default of 70 an empty kitchen read as motion all day; at 20 a person 6 feet away woke the saver
 
 DEV = "vaca_ha0000xx"
 DISPLAY = "sensor.den_display"
@@ -185,7 +185,7 @@ saver = {
          "then": [{"action": "view_assist.navigate",
                    "data": {"device": DISPLAY,
                             "path": f"{{% set p = states('{RETURN}') %}}"
-                                    f"{{{{ p if p.startswith('/') and p != '{SAVER}' else '{HOME}' }}}}"}}]},
+                                    f"{{{{ p if p.startswith('/') and p != '{SAVER}' and '{TAKEOVER}' not in p else '{HOME}' }}}}"}}]},
     ],
     "mode": "single", "max_exceeded": "silent",
 }
