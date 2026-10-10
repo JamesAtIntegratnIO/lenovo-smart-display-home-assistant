@@ -566,6 +566,52 @@ python3 ha/ha_rest.py POST /api/services/view_assist/navigate '{"device":"sensor
 nix develop --command sh -c 'sleep 7; adb -s HA0000XX exec-out screencap -p > work/view.png'
 ```
 
+**Camera on detection or doorbell.** `nix develop --command sh -c '$AVB_PYTHON ha/camera_takeover.py'`
+creates the automation "Smart Display - Show camera on detection or doorbell" and the one
+helper it needs (`input_text.den_display_takeover_return`). Edit `CAMERAS` and
+`DOORBELL_RING` at the top of the file for your own entities first.
+
+- **Triggers:** UniFi Protect's person and vehicle detection sensors for each camera going
+  on, and the doorbell's ring event. Raw motion is left out on purpose: it fires on
+  shadows and trees and would take the screen over all day.
+- **What it does:** remembers the display's current view and mode in the helper, then
+  opens `/view-assist/camera?camera=<medium entity>&takeover=1`. There is no `timeout` in
+  the path, so View Assist holds the camera until the automation gives the screen back.
+- **Going back:** every 5 seconds it checks that camera's sensors. When they have all been
+  off for `CLEAR_SECONDS` (30), or after `MAX_SECONDS` (300) whatever happens, it restores
+  the mode and navigates to the remembered view. If someone has moved the display to
+  another view in the meantime, it leaves the display alone.
+- **Several cameras:** the newest detection wins and the first return point is kept (the
+  `takeover=1` marker is how the automation recognises its own camera view). For
+  `RING_HOLD_SECONDS` (30) after a doorbell ring, only the doorbell camera may take the screen.
+- **Do Not Disturb** on the View Assist device stops takeovers. Disabling the automation
+  turns the feature off.
+
+To test without walking outside, write a state straight into Home Assistant. The
+integration overwrites it on the camera's next real update:
+
+```bash
+S=binary_sensor.g6_bullet_person_detected_2   # your driveway person sensor
+python3 ha/ha_rest.py POST /api/states/$S '{"state":"on"}'; sleep 15
+python3 ha/ha_rest.py POST /api/states/$S '{"state":"off"}'   # display returns about 30 s later
+# a doorbell ring is a new timestamp on the event entity
+python3 ha/ha_rest.py POST /api/states/event.g4_doorbell_pro_poe_doorbell \
+  "{\"state\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000+00:00)\",\"attributes\":{\"event_types\":[\"ring\"],\"event_type\":\"ring\",\"device_class\":\"doorbell\"}}"
+```
+
+**Gotchas.**
+
+- View Assist navigates to its home screen whenever the mode changes. Restoring the mode
+  and navigating in the same instant ended on Home, so the automation waits one second
+  between the two. Coming back to a view other than Home shows Home for that second.
+- A view other than Home is still subject to View Assist's own view timeout afterwards
+  (20 seconds here), exactly as if it had been opened by voice.
+- Opening a camera live can flip its Home Assistant entity to `unavailable`: the display
+  plays the stream over WebRTC, but Home Assistant's HLS worker fails on the same camera
+  ("Error opening stream (I/O error, rtsps://…)") and keeps retrying. The live picture on
+  the display is not affected, so the automation does not check the entity's state.
+  Reloading the UniFi Protect integration clears it until the next live view.
+
 ---
 
 ## 12. Voice features
@@ -836,6 +882,8 @@ display reacts (2 s to brighten, 4 s to dim, fixed in the firmware).
 | Sports phrases not understood | Blueprint has four fixed phrasings | Extend the phrase list | Pipeline debug showed what was heard |
 | Generic score request reports the wrong team | Shared tracker keeps the last team | Default-team automation | Tested after asking about another team |
 | Camera tiles broken on the main Overview | 3 of 4 high-resolution camera entities were unavailable in Home Assistant; high-res streams are also beyond the decoder | Medium resolution entities | Entity states; WebRTC "No decodable frame" in `logcat` |
+| Camera takeover returned to Home instead of the previous view | View Assist goes to its home screen on a mode change, and that landed after the automation's own navigate | Restore the mode, wait 1 s, then navigate | History of `sensor.vaca_…_current_path` showed the right view for under a millisecond |
+| Medium camera entities flip to `unavailable` after a live view | Home Assistant's HLS stream worker cannot open that camera's RTSPS stream and retries with a growing delay; WebRTC on the display still works | Not fixed. Reload the UniFi Protect integration to clear it | `system_log/list` and the entity's history |
 | Music "playing" but silent | IoT VLAN could not reach Music Assistant's stream port 8097 | Firewall rule | `logcat` showed the stream URL; `curl` to 8097 from the device returned nothing |
 | Rocker not loud enough | Android media stream was at 40 of 100 underneath the player's volume | Drive the stream itself | `dumpsys audio` |
 | Rocker steps uneven | Android's volume curve | 3 dB table | `dumpsys media.audio_policy` |
@@ -878,6 +926,10 @@ $AVB_PYTHON ha/ask.py "set a timer for 1 minute" "show me my timers" "how are th
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://10.0.1.174:8123/api/webhook/den_display_volume_up   # 200, volume moves one position
 ```
 
+Then simulate a detection as in step 11 ("Camera on detection or doorbell"): the camera
+should fill the screen within a second or two and the previous view come back about 30
+seconds after the sensor is set to off.
+
 Then by voice at the display: "Okay Nabu, set a timer for one minute", "Okay Nabu, play
 some Fleetwood Mac", and press the rocker.
 
@@ -894,6 +946,9 @@ setting in step 17.
   `/data/data/de.ozerov.fully/shared_prefs/de.ozerov.fully_preferences.xml`.
 - **Stock WebView:** `downloads/backup/stock-webview-66.0.3359.158.apk` is the original.
 - **Re-enable a Google package:** `adb shell pm enable <package>`.
+- **Stop cameras taking over the screen:** disable or delete the "Smart Display - Show
+  camera on detection or doorbell" automation and the
+  `input_text.den_display_takeover_return` helper.
 - **Remove the button watcher:** delete `/system/bin/volkeys.sh` and
   `/system/etc/init/volkeys.rc`, and the "Smart Display - Volume buttons" automation.
 - **Stock firmware:** flash the user build to the active slot and relock AVB with

@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Create the automation that puts a camera on the Smart Display when something happens there.
+
+A person or vehicle detection on a UniFi Protect camera, or a ring of the doorbell, switches
+the display to that camera full screen. When the camera has been quiet for CLEAR_SECONDS the
+display goes back to the view it was on. Raw motion is not a trigger: trees and shadows
+would take the screen over all day.
+
+Needs one helper to remember where to go back to: input_text.den_display_takeover_return
+(created here if missing). Run from the project root, like the other scripts in ha/.
+"""
+import json, subprocess, sys
+
+DISPLAY = "sensor.den_display"
+RETURN_HELPER = "input_text.den_display_takeover_return"
+CLEAR_SECONDS = 30     # quiet time on the camera before the display goes back
+MAX_SECONDS = 300      # give the screen back after this long even if detections keep coming
+RING_HOLD_SECONDS = 30 # after a doorbell ring, other cameras cannot take the screen for this long
+DOORBELL_RING = "event.g4_doorbell_pro_poe_doorbell"
+MARK = "takeover=1"    # in the path, so the automation can tell its own camera view from one asked for by voice
+
+CAMERAS = {  # medium stream (the display decodes at most 1080p) -> detection sensors that trigger it
+    "camera.front_doorbell_medium_resolution_channel": [
+        "binary_sensor.g4_doorbell_pro_poe_person_detected",
+        "binary_sensor.g4_doorbell_pro_poe_vehicle_detected"],
+    "camera.front_driveway_medium_resolution_channel": [
+        "binary_sensor.g6_bullet_person_detected_2",
+        "binary_sensor.g6_bullet_vehicle_detected_2"],
+    "camera.front_landscape_medium_resolution_channel": [
+        "binary_sensor.g6_bullet_person_detected",
+        "binary_sensor.g6_bullet_vehicle_detected"],
+    "camera.back_yard_medium_resolution_channel": [
+        "binary_sensor.back_yard_person_detected"],   # vehicle detection is off on this camera
+}
+DOORBELL_CAMERA = next(iter(CAMERAS))
+
+
+def ha(method, path, body=None):
+    args = [sys.executable, "ha/ha_rest.py", method, path] + ([json.dumps(body)] if body is not None else [])
+    return subprocess.run(args, capture_output=True, text=True).stdout
+
+
+if '"http_error"' in ha("GET", f"/api/states/{RETURN_HELPER}"):
+    msg = {"type": "input_text/create", "name": "Den display takeover return", "max": 255, "icon": "mdi:cctv"}
+    print(subprocess.run([sys.executable, "ha/ha_ws.py", "call", json.dumps(msg)], capture_output=True, text=True).stdout)
+
+triggers = [{"trigger": "state", "entity_id": DOORBELL_RING, "id": DOORBELL_CAMERA,
+             "not_from": ["unavailable"], "not_to": ["unavailable", "unknown"]}]
+for camera, sensors in CAMERAS.items():
+    triggers.append({"trigger": "state", "entity_id": sensors, "from": "off", "to": "on", "id": camera})
+
+RING_AGE = f"(now() - states.{DOORBELL_RING}.last_changed).total_seconds()"
+conditions = [
+    {"condition": "template", "alias": "Display is not on Do Not Disturb",
+     "value_template": f"{{{{ state_attr('{DISPLAY}', 'do_not_disturb') != 'on' }}}}"},
+    # The event entity's state is the time of the last ring. A reload restores an old one; that is not a ring.
+    {"condition": "template", "alias": "A ring is a fresh one",
+     "value_template": f"{{{{ trigger.entity_id != '{DOORBELL_RING}' "
+                       "or (now() - (trigger.to_state.state | as_datetime)).total_seconds() | abs < 30 }}"},
+    {"condition": "template", "alias": "A doorbell ring keeps the screen for a while",
+     "value_template": f"{{{{ trigger.entity_id == '{DOORBELL_RING}' or trigger.id == '{DOORBELL_CAMERA}' "
+                       f"or {RING_AGE} > {RING_HOLD_SECONDS} }}}}"},
+]
+
+DONE = ("{% set ns = namespace(last=started | as_datetime, on=false) %}"
+        "{% for s in sensors[camera] %}"
+        "{% if is_state(s, 'on') %}{% set ns.on = true %}{% endif %}"
+        "{% if states[s] and states[s].last_changed > ns.last %}{% set ns.last = states[s].last_changed %}{% endif %}"
+        "{% endfor %}"
+        f"{{{{ (not ns.on and (now() - ns.last).total_seconds() >= {CLEAR_SECONDS}) "
+        f"or (now() - (started | as_datetime)).total_seconds() >= {MAX_SECONDS} }}}}")
+ON_TAKEOVER = f"{{{{ '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') }}}}"
+
+actions = [
+    {"variables": {
+        "camera": "{{ trigger.id }}",
+        "sensors": CAMERAS,
+        "started": "{{ now().isoformat() }}",
+        # Already showing a takeover (this run restarted an earlier one): keep the first return point.
+        "came_from": f"{{% if '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') and '|' in states('{RETURN_HELPER}') %}}"
+                     f"{{{{ states('{RETURN_HELPER}') }}}}"
+                     f"{{% else %}}{{{{ state_attr('{DISPLAY}', 'mode') or 'normal' }}}}|"
+                     f"{{{{ state_attr('{DISPLAY}', 'current_path') or '/smart-display/home' }}}}{{% endif %}}"}},
+    {"action": "input_text.set_value", "target": {"entity_id": RETURN_HELPER}, "data": {"value": "{{ came_from }}"}},
+    # No timeout in the path: the camera view holds the screen until this automation gives it back.
+    {"action": "view_assist.navigate",
+     "data": {"device": DISPLAY, "path": f"/view-assist/camera?camera={{{{ camera }}}}&{MARK}"}},
+    {"repeat": {
+        "sequence": [{"delay": {"seconds": 5}}],
+        "until": [{"condition": "template", "value_template": DONE}]}},
+    # Someone moved the display to another view in the meantime: leave it where they put it.
+    {"condition": "template", "value_template": ON_TAKEOVER},
+    {"action": "view_assist.set_state", "target": {"entity_id": DISPLAY},
+     "data": {"mode": "{{ came_from.split('|', 1)[0] }}"}},
+    # View Assist goes to its home screen when the mode changes; let that land before going back.
+    {"delay": {"seconds": 1}},
+    {"action": "view_assist.navigate", "data": {"device": DISPLAY, "path": "{{ came_from.split('|', 1)[1] }}"}},
+]
+
+config = {"alias": "Smart Display - Show camera on detection or doorbell",
+          "description": "Person or vehicle on a camera, or a doorbell ring, shows that camera on the Den display, "
+                         f"then returns to the previous view {CLEAR_SECONDS} seconds after it clears",
+          "triggers": triggers, "conditions": conditions, "actions": actions, "mode": "restart"}
+print(ha("POST", "/api/config/automation/config/smart_display_camera_takeover", config))

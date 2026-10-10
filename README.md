@@ -22,6 +22,9 @@ In Home Assistant the device is "Den display".
   text-to-speech, local phrases first, Claude (Haiku 5.5 with web search) for everything else.
 - **By voice**: timers and alarms, cameras by name, NFL scores (Seahawks by default),
   screen navigation, Spotify through Music Assistant.
+- **Cameras come to you**: a person or vehicle on a UniFi Protect camera, or a ring of the
+  doorbell, puts that camera on the screen. It goes back to what it was showing 30 seconds
+  after the camera is clear.
 - **Physical volume rocker** sets one system-wide volume in ten 3 dB positions.
 
 ## Screenshots
@@ -54,6 +57,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/ask.py` | Runs text through the voice pipeline as if spoken at the display. Best test tool here. |
 | `ha/build_smart_display.py` | Generates the dashboard (`ha/smart-display.yaml`) from the main Overview. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
+| `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
 | `ha/music_tool.py` | The "play music" script the AI calls, plus the AI agent's prompt and settings. |
 | `ha/blueprint_automations.py` | Record of the View Assist blueprint automations and the Seahawks default. |
@@ -108,7 +112,10 @@ refresh it if the Overview's quick actions or roof themes change.
   and `script.den_display_play_music`.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
 - **Automations**: three "View Assist - …" blueprint instances and five "Smart Display - …"
-  ones (cameras, navigation, volume buttons, sports default team; see `ha/`).
+  ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,
+  sports default team; see `ha/`).
+- **Helper**: `input_text.den_display_takeover_return`, where the camera automation keeps
+  the view to go back to.
 - **Camera entities**: the four "Medium resolution channel" UniFi Protect cameras enabled,
   because the display decodes at most 1920x1088 H.264.
 - **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 5,
@@ -140,6 +147,11 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Pace fastboot commands about a second apart**; this bootloader garbles replies otherwise.
 - **`media volume` and `input keyevent` take over a second each** on this hardware, which is
   why the rocker goes through Home Assistant.
+- **View Assist goes to its home screen whenever the mode changes.** To return to another
+  view after a camera, restore the mode first, wait a second, then navigate.
+- **A live camera view can leave the camera entity `unavailable` in Home Assistant** while
+  the picture on the display is fine (WebRTC works, the HLS worker does not). Reloading the
+  UniFi Protect integration clears it.
 - A fixed phrase answered by an automation appears to the AI as a reply with no tool call.
   Its prompt has to say those are real, or it "corrects" them.
 
@@ -151,6 +163,8 @@ refresh it if the Overview's quick actions or roof themes change.
 
 ## Not verified
 
+- The camera automation with a real doorbell press. It was tested with simulated ring and
+  detection states and has been left to run on real detections.
 - That the brightness setting survives a reboot.
 - NFL teams other than the Seahawks, 49ers and Cowboys by voice.
 - `ha/blueprint_automations.py` as a script (the automations it describes exist and work).
