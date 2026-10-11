@@ -28,8 +28,11 @@ named "Den display", and the entity ids still say so (`sensor.den_display`,
 - **Recipes and how-tos**: "how do I make peach cobbler" is web searched, answered from one
   named site with a one-line summary, and the page is sent to the owner's phone as a notification.
 - **Cameras come to you**: a person or vehicle on a UniFi Protect camera, or a ring of the
-  doorbell, puts that camera on the screen. It goes back to what it was showing 30 seconds
-  after the camera is clear.
+  doorbell, puts that camera on the screen, live. It goes back to what it was showing 30
+  seconds after the camera is clear.
+- **Camera views** are [Advanced Camera Card](https://card.camera): a grid of four
+  refreshing snapshots, and one full-screen live view per camera (30 fps over HLS) opened
+  by a tap, by voice or by a detection.
 - **Physical volume rocker** sets one system-wide volume in ten 3 dB positions.
 - **Burn-in protection**: after 5 minutes with nobody around (the display's own camera
   watches the room for motion), a full-screen slideshow of a shared Google Photos album with
@@ -74,6 +77,7 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/themes/storm_at_sea.yaml`, `ha/install_theme.sh` | "Storm at Sea" dark theme (navy, slate, sea green, high-contrast text for the 7" screen) and the script that copies it to Home Assistant and makes it the default dark theme. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
+| `ha/hls_only.py`, `ha/frontend/hls_only.js` | Makes live cameras on the display play over HLS instead of WebRTC, which freezes on this display's Wi-Fi. A display-only dashboard resource. |
 | `ha/screen_saver.py`, `ha/frontend/kitchen_saver.js` | Burn-in protection: the activity, screen saver and light level automations, their helpers, and the saver card (slideshow with clock, or dark clock). Settings are constants at the top of the script. |
 | `ha/photo_album.py`, `ha/album_sync.py` | The slideshow's photos: a helper holding one shared Google Photos album link, and the script Home Assistant runs every 6 hours to copy that album to `/config/www/kitchen_display/`. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
@@ -131,7 +135,7 @@ refresh it if the Overview's quick actions or roof themes change.
 ## What was done in Home Assistant
 
 - **HACS**: View Assist, View Assist Companion App, TeamTracker (integration and card),
-  button-card, layout-card, card-mod.
+  button-card, layout-card, card-mod, Advanced Camera Card.
 - **Add-on**: Music Assistant, with Spotify as a music source and the display added through
   the "Home Assistant MediaPlayers" player provider.
 - **Integrations**: VACA device at `192.168.9.253:10800`; View Assist device "Kitchen display"
@@ -154,7 +158,8 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Package** `/config/packages/kitchen_display.yaml`: the command-line sensor
   `sensor.kitchen_display_album` that syncs the album; the script it runs is
   `/config/kitchen_display/album_sync.py`.
-- **Dashboard resource**: `ha/frontend/kitchen_saver.js`, registered as a `data:` URL.
+- **Dashboard resources**: `ha/frontend/kitchen_saver.js` and `ha/frontend/hls_only.js`,
+  registered as `data:` URLs (the second only acts on the display).
 - **Camera entities**: the four "Medium resolution channel" UniFi Protect cameras enabled,
   because the display decodes at most 1920x1088 H.264.
 - **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 5,
@@ -188,7 +193,19 @@ refresh it if the Overview's quick actions or roof themes change.
 - **`media volume` and `input keyevent` take over a second each** on this hardware, which is
   why the rocker goes through Home Assistant.
 - **View Assist goes to its home screen whenever the mode changes.** To return to another
-  view after a camera, restore the mode first, wait a second, then navigate.
+  view after changing it, restore the mode first, wait a second, then navigate. The camera
+  takeover avoids the mode altogether now.
+- **WebRTC video freezes on this display; HLS does not.** About 1 UDP packet in 5 is lost
+  on its Wi-Fi link and nothing resends them, so a WebRTC camera ran for 20-30 seconds and
+  then showed a frame every few seconds. `ha/frontend/hls_only.js` makes the display ask
+  for HLS: 30 fps with no dropped frames, about 4 seconds behind, 5-10 seconds to start.
+- **Smooth video costs about one core more than frozen video** (2.8 of 4 cores busy with a
+  camera full screen, against 1.7). The wake word and voice still worked with it up. Four
+  live cameras at once used all four cores and dropped half the frames, so the grid stays
+  on snapshots.
+- **Advanced Camera Card's snapshot provider fetches full-size frames** unless
+  `image.entity_parameters` asks for a size; four 1.3 MB pictures every 10 seconds cost
+  half a core on the grid.
 - **Skip Home Assistant 2026.10.0 with UniFi Protect.** FFmpeg 9 in that release rejects
   Protect's self-signed RTSPS certificate ([core issue 184775](https://github.com/home-assistant/core/issues/184775)):
   cameras went `unavailable` after any live view, and each live view left two HLS requests
@@ -237,3 +254,8 @@ refresh it if the Overview's quick actions or roof themes change.
 - That real movement across the room leaves the saver alone. The camera's motion state was
   set by hand for the test, and the saver stayed.
 - "face" detection mode, and a real doorbell press while the saver is up.
+- A whole evening of the HLS live views. They were watched for a few minutes at a time,
+  and through two real detections during testing, not for the full 5 minutes a takeover
+  can last, and not at night (infrared picture, different bitrate).
+- The spoken wake word with a camera on screen was played through the display's own
+  speaker, not spoken by a person across the room.

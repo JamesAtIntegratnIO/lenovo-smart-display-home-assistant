@@ -483,6 +483,8 @@ The app shows a blue "Waiting for connection" screen with its IP and port (10800
    renamed to "Kitchen display" without that.
 5. HACS (frontend): install **button-card**, **layout-card** and **card-mod**. View
    Assist's own screens show "Configuration error" without them. No restart needed.
+   Also install **Advanced Camera Card** (`dermotduffy/advanced-camera-card`); the camera
+   views in step 11 are built from it.
 
 The device then has about 45 entities, among them `assist_satellite.vaca_ha0000xx`,
 `media_player.vaca_ha0000xx_media_player` and a set of `select.`, `switch.` and
@@ -573,8 +575,11 @@ Design decisions, all learned by looking at screenshots from the device
 - Views: **Home** (clock, thermostat, timers card, quick actions, door locks),
   **Lights**, **Cameras** (2x2 grid), **Outside**, **Music**, **Media** (TV, vacuum),
   **Sports** (TeamTracker card).
-- Cameras use `picture-entity` with `camera_view: auto` (a refreshing snapshot); tapping
-  opens the live stream. Four simultaneous live streams would be too much for this CPU.
+- Cameras use [Advanced Camera Card](https://card.camera). The grid shows a snapshot of
+  each camera that refreshes every 10 seconds; tapping one opens that camera live on its
+  own full-screen view (`/smart-display/cam-<name>`), and tapping the live picture goes back
+  to the grid. Four live pictures at once are too much for this CPU; "Live video" below has
+  the numbers.
 - The timers card is a Markdown card that renders the `timers` attribute of
   `sensor.den_display`. It updates when a timer changes and once a minute.
 
@@ -588,6 +593,78 @@ nix develop --command sh -c '$AVB_PYTHON ha/ha_ws.py call "{\"type\":\"config/en
 
 They appear about 30 seconds later. If they stay unavailable, enable the Medium RTSP
 stream for that camera in Protect.
+
+**Live video: Advanced Camera Card over HLS.** `camera()` in `ha/build_smart_display.py`
+builds every camera card. What it sets, and why:
+
+- `profiles: [low-performance]` removes the menu, thumbnails, timeline and loading effects.
+  That profile also replaces live video with snapshots, so a live card sets
+  `live_provider: ha` (Home Assistant's own stream) and a grid tile sets `image`.
+- Grid tiles ask Home Assistant for a picture the size of a tile
+  (`image.entity_parameters: width=480&height=270`). Without it the card fetches the
+  camera's full frame, about 1.3 MB every 10 seconds per camera, and the grid cost half a
+  core more than the stock picture cards.
+- `live.lazy_unload` and `live.auto_pause` on `unselected` and `hidden`, and no built-in
+  video controls. A card only streams while its view is open: leaving the view removes the
+  card and the stream with it.
+- In a panel view the card leaves 56 px for Home Assistant's header, which is hidden on the
+  display. `view.theme.overrides: {"--kiosk-header-height": "0px"}` gives the picture the
+  whole screen.
+
+The stream type matters more than the card. Home Assistant offers WebRTC and HLS, and both
+the stock cards and Advanced Camera Card pick WebRTC. On this display WebRTC does not stay
+live: it runs at 20-25 fps for 20-30 seconds, then drops to 0-3 fps with freezes of ten
+seconds and more. WebRTC arrives over UDP, and about one packet in five is lost on the
+display's Wi-Fi link (the browser's WebRTC statistics showed 988 lost of 5,343; the kernel's
+own UDP error counters stayed at zero, so the loss is before the network stack; `ping` and
+TCP are fine). Home Assistant's WebRTC server does not resend, so every lost packet freezes
+the picture until the next keyframe. HLS comes over TCP on the same connection as the rest
+of the dashboard and is decoded in hardware.
+
+`ha/frontend/hls_only.js` makes the display use HLS. It wraps the frontend's WebSocket
+call for `camera/capabilities` and trims the answer to `["hls"]`, only when the user agent
+says it is this display (`mt8167s`). Install it with:
+
+```bash
+nix develop --command sh -c '$AVB_PYTHON ha/hls_only.py install'    # or: remove | status
+```
+
+It is a `data:` URL dashboard resource, like the screen saver card, so nothing is copied to
+Home Assistant. It applies to every live camera on the display, including View Assist's own
+camera screen and the stock more-info dialog. Reload the display's page after installing
+(restart the app, or `location.reload()` through the remote debugger).
+
+What HLS costs: the picture is about 4 seconds behind real time, and a camera that has not
+been viewed in the last minute takes 5 to 10 seconds to start (a still picture shows
+meanwhile; about 2 seconds when the stream is still warm). Home Assistant's "preload
+stream" camera setting cut a cold start from about 9 to about 5 seconds in one test and
+keeps an RTSP session open per camera all day; it is off here.
+
+Measured on the display on 2026-10-11 (60-second windows over adb, freshly loaded page,
+CPU in cores busy out of 4, read from `/proc/stat`):
+
+| View | Stock cards, WebRTC | Advanced Camera Card, HLS |
+|---|---|---|
+| Home | 0.95 | 0.92 |
+| Cameras grid (4 snapshots) | 0.98 | 1.11 |
+| One camera after a tap (doorbell, 20 fps source) | 1.39 cores, 1.5 fps shown | 2.21 cores, 20.3 fps, 0 of 1,221 frames dropped |
+| One camera full screen (driveway, 30 fps source) | 1.67 cores, 2.8 fps shown, 21 of 171 dropped | 2.76 cores, 30.7 fps, 0 of 1,846 dropped |
+| Four live tiles (tried, not used) | not tried | 3.85 cores, 18 fps, about half the frames dropped |
+
+Live video costs about one core more than before because every frame is now decoded and
+drawn; before, the display spent most of a live view showing a frozen frame. The cost is
+frame rate, not resolution: the 640x360 "Low resolution channel" measured the same 2.6
+cores as the 1280x720 one. During a live view the app process (which hosts the WebView's
+GPU thread) uses about 1.45 cores and the renderer 0.5. Memory: the renderer grows by about
+70 MB on the camera views (158 to 231 MB PSS on the grid); 1.05 GB stays available.
+
+With a live picture up, the wake word was caught 4 times out of 4 (spoken through the
+display's own speaker) and answered in 4.6 to 6.7 seconds, against 3 of 3 in 4.6 to 5.8
+seconds on the Home view, and the video held 30 fps throughout.
+
+If the extra core ever matters, set `live=False` on the full-screen views in
+`ha/build_smart_display.py`: they then show a still that refreshes (set
+`refresh_seconds` to 1 or 2), at about the cost of the grid.
 
 To preview a view on the device and capture it:
 
@@ -604,16 +681,21 @@ helper it needs (`input_text.den_display_takeover_return`). Edit `CAMERAS` and
 - **Triggers:** UniFi Protect's person and vehicle detection sensors for each camera going
   on, and the doorbell's ring event. Raw motion is left out on purpose: it fires on
   shadows and trees and would take the screen over all day.
-- **What it does:** remembers the display's current view and mode in the helper, then
-  opens `/view-assist/camera?camera=<medium entity>&takeover=1`. There is no `timeout` in
-  the path, so View Assist holds the camera until the automation gives the screen back.
+- **What it does:** remembers the display's current view in the helper, then opens that
+  camera's full-screen view, `/smart-display/cam-<name>?takeover=1`, with
+  `revert_timeout: 0`, so View Assist leaves the camera up until the automation gives the
+  screen back. `VIEWS` in the script maps each camera to its view; the names are the slugs
+  in `CAMERAS` in `ha/build_smart_display.py`. A still picture shows at once and the live
+  picture takes over 5 to 10 seconds later (HLS start-up, see "Live video" above).
 - **Going back:** every 3 seconds it checks that camera's sensors. When they have all been
-  off for `CLEAR_SECONDS` (30), or after `MAX_SECONDS` (300) whatever happens, it restores
-  the mode and navigates to the remembered view.
-- **If someone moves the display to another view during a takeover,** the automation
-  notices within 3 seconds, restores the mode and keeps them on the view they chose. The
-  mode has to be restored even then: the camera view puts View Assist in "hold" and
-  nothing else takes it out, which would stop views timing out back to Home.
+  off for `CLEAR_SECONDS` (30), or after `MAX_SECONDS` (300) whatever happens, it navigates
+  to the remembered view. View Assist's mode is never changed. (Until 2026-10-11 the
+  takeover used View Assist's own camera screen, which sets the mode to "hold"; the
+  automation had to restore it and wait a second before navigating.)
+- **If a voice request or another automation moves the display during a takeover,** the
+  automation notices within 3 seconds and leaves the display where it is. A tap on the
+  live picture opens the camera grid; View Assist does not record navigation by touch, so
+  the display still returns to the remembered view once the camera is clear.
 - **Several cameras:** the newest detection wins and the first return point is kept (the
   `takeover=1` marker is how the automation recognises its own camera view). For
   `RING_HOLD_SECONDS` (30) after a doorbell ring, only the doorbell camera may take the screen.
@@ -634,9 +716,9 @@ python3 ha/ha_rest.py POST /api/states/event.g4_doorbell_pro_poe_doorbell \
 
 **Gotchas.**
 
-- View Assist navigates to its home screen whenever the mode changes. Restoring the mode
-  and navigating in the same instant ended on Home, so the automation waits one second
-  between the two. Coming back to a view other than Home shows Home for that second.
+- View Assist navigates to its home screen whenever the mode changes. The takeover no
+  longer changes the mode, so it returns straight to the previous view. Anything that does
+  change it has to restore the mode, wait a second, then navigate.
 - A view other than Home is still subject to View Assist's own view timeout afterwards
   (20 seconds here), exactly as if it had been opened by voice.
 - **Home Assistant 2026.10.0 only (fixed in 2026.10.1, workarounds retired):** opening a
@@ -721,8 +803,9 @@ It only worked as an automation action with a `target:` block, which is the form
 
 **12c. Cameras by voice.** `python3 ha/camera_voice.py` creates one automation with a
 sentence trigger per camera, each listing that camera's spoken names, plus one for "all
-cameras". A single camera opens View Assist's camera screen with
-`/view-assist/camera?camera=<entity>&timeout=120`; "all cameras" opens the dashboard grid.
+cameras". A single camera opens its full-screen live view (`/smart-display/cam-<name>`,
+the same Advanced Camera Card views the takeover uses) for 120 seconds
+(`revert_timeout`); "all cameras" opens the dashboard grid.
 View Assist's own camera blueprint was not used: it requires the word "camera" in every
 request and uses one catch-all slot for the name, which would also capture "show me my
 timers".
@@ -1266,6 +1349,9 @@ the page). It worked, but a dark clock was preferred to a dead screen.
 | Sports phrases not understood | Blueprint has four fixed phrasings | Extend the phrase list | Pipeline debug showed what was heard |
 | Generic score request reports the wrong team | Shared tracker keeps the last team | Default-team automation | Tested after asking about another team |
 | Camera tiles broken on the main Overview | 3 of 4 high-resolution camera entities were unavailable in Home Assistant; high-res streams are also beyond the decoder | Medium resolution entities | Entity states; WebRTC "No decodable frame" in `logcat` |
+| Live camera freezes after 20 to 30 seconds, then moves a frame every few seconds | WebRTC over UDP loses about 1 packet in 5 on the display's Wi-Fi link and Home Assistant's WebRTC server does not resend | `ha/frontend/hls_only.js`: the display asks for HLS only (step 11, "Live video") | WebRTC statistics through the remote debugger (`packetsLost`, `framesDecoded` stuck while bytes kept arriving); two screenshots 5 s apart showed the same frame |
+| Camera grid used half a core more with Advanced Camera Card than with stock cards | The card's snapshot provider fetched the full camera frame (1.3 MB) for each tile | `image.entity_parameters: width=480&height=270` | Remote debugger network log |
+| Full-screen camera card left a 56 px band at the bottom | In a panel view the card subtracts the header height, and the header is hidden on the display | `view.theme.overrides: {"--kiosk-header-height": "0px"}` | Element sizes through the remote debugger |
 | Camera takeover returned to Home instead of the previous view | View Assist goes to its home screen on a mode change, and that landed after the automation's own navigate | Restore the mode, wait 1 s, then navigate | History of `sensor.vaca_…_current_path` showed the right view for under a millisecond |
 | Camera entities flip to `unavailable` after a live view | Home Assistant 2026.10.0 ships FFmpeg 9, which rejects Protect's self-signed RTSPS certificate, so the HLS stream worker fails for every camera; WebRTC on the display still works | Update to 2026.10.1 or later (done 2026-10-11; the reload automation used in between is retired) | `system_log/list`; requesting `camera/stream` for a healthy camera broke it too; `ffmpeg -i rtsps://…` printed "Peer certificate failed verification"; core issue 184775 |
 | Camera snapshots blank on the display (grey tiles, broken-image icons) | Same 2026.10.0 bug: each live view leaves two HLS playlist requests hanging, and six fill the browser's connection limit | Update to 2026.10.1 or later (done 2026-10-11; the HLS guard resource used in between is retired); restart the app to clear it once | WebView remote debugger network trace; `netstat` on the device; the same URL answered `curl` instantly |
@@ -1315,9 +1401,10 @@ $AVB_PYTHON ha/ask.py "set a timer for 1 minute" "show me my timers" "how are th
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://10.0.1.174:8123/api/webhook/den_display_volume_up   # 200, volume moves one position
 ```
 
-Then simulate a detection as in step 11 ("Camera on detection or doorbell"): the camera
-should fill the screen within a second or two and the previous view come back about 30
-seconds after the sensor is set to off.
+Then simulate a detection as in step 11 ("Camera on detection or doorbell"): a still of
+the camera should fill the screen within a second or two, the live picture follow within
+about 10 seconds, and the previous view come back about 30 seconds after the sensor is set
+to off.
 
 Screen saver: `adb shell dumpsys media.camera | grep Facing` says Front and
 `binary_sensor.…_motion` turns on when you wave at the display. Leave it alone for five
@@ -1344,6 +1431,11 @@ setting in step 17.
 - **Stop cameras taking over the screen:** disable or delete the "Smart Display - Show
   camera on detection or doorbell" automation and the
   `input_text.den_display_takeover_return` helper.
+- **Back to WebRTC:** `$AVB_PYTHON ha/hls_only.py remove` and reload the display's page.
+- **Back to the stock camera cards:** the generator, takeover and voice scripts from before
+  the Advanced Camera Card change are in the git history (commit `b1b394f`); rebuild the
+  dashboard and rerun `ha/camera_takeover.py` and `ha/camera_voice.py` from those. The
+  card itself can stay installed or be removed in HACS.
 - **Remove the screen saver:** `$AVB_PYTHON ha/screen_saver.py remove` (automations, card
   resource, camera detection off), delete the `saver` view from `ha/build_smart_display.py`
   and rebuild, delete the `kitchen_display` helpers and the "Refresh photo album"
@@ -1401,6 +1493,7 @@ Ids like the pipeline and config entries are generated per install. Find yours w
 | View Assist integration | 2026.7.0 |
 | TeamTracker / card | 0.18.4 / 0.17.2 |
 | button-card / layout-card / card-mod | 7.0.1 / 2.4.7 / 4.2.1 |
+| Advanced Camera Card | 8.1.0 |
 | Music Assistant add-on | 2.10.6 |
 | WebView | LineageOS 138.0.7204.63 (arm) |
 | Simple Keyboard | version code 148 (6.7) |
@@ -1446,6 +1539,9 @@ e4708acf99ab2b162373708bf8b122e3c387c5062a3e136356ef941df6868d2f  vaca-0.13.5.ap
 - **Frontend cards**: <https://github.com/custom-cards/button-card>,
   <https://github.com/thomasloven/lovelace-layout-card>,
   <https://github.com/thomasloven/lovelace-card-mod>.
+- **Advanced Camera Card**: <https://card.camera>,
+  <https://github.com/dermotduffy/advanced-camera-card> (live providers, the
+  `low-performance` profile, per-camera `image` options).
 - **Music Assistant**: <https://www.music-assistant.io/>. Reports of Spotify playlist
   problems after Spotify's February 2026 API change:
   <https://github.com/music-assistant/support/issues/5114>,

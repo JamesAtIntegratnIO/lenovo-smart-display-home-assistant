@@ -7,12 +7,13 @@ lists each camera's spoken names explicitly instead, so "show me the front drive
 """
 import json, subprocess, sys
 
-CAMERAS = {  # entity (medium stream: the display decodes at most 1080p) -> (label, spoken names)
-    "camera.front_doorbell_medium_resolution_channel": ("doorbell", "(doorbell | front door | front doorbell | porch | front porch)"),
-    "camera.front_driveway_medium_resolution_channel": ("driveway", "[front] (driveway | drive way)"),
-    "camera.front_landscape_medium_resolution_channel": ("front yard", "[front] (landscape | yard | lawn)"),
-    "camera.back_yard_medium_resolution_channel": ("back yard", "(back yard | backyard | back lawn | patio)"),
+CAMERAS = {  # full-screen view (the slugs in ha/build_smart_display.py CAMERAS) -> (label, spoken names)
+    "/smart-display/cam-doorbell": ("doorbell", "(doorbell | front door | front doorbell | porch | front porch)"),
+    "/smart-display/cam-driveway": ("driveway", "[front] (driveway | drive way)"),
+    "/smart-display/cam-landscape": ("front yard", "[front] (landscape | yard | lawn)"),
+    "/smart-display/cam-back-yard": ("back yard", "(back yard | backyard | back lawn | patio)"),
 }
+SHOW_SECONDS = 120  # how long a camera asked for by voice stays up before the display goes home
 VERB = "(show | display | pull up | open) [me]"
 NOUN = "(camera | cameras | cam | view | feed)"
 DEVICE = "{{ view_assist_entity(trigger.device_id) or 'sensor.den_display' }}"
@@ -24,11 +25,10 @@ triggers = [{"trigger": "conversation", "id": "all", "command": [
 choices = [{"conditions": [{"condition": "trigger", "id": "all"}], "sequence": [
     {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": "/smart-display/cameras"}},
     {"set_conversation_response": "Showing all cameras"}]}]
-for entity, (label, names) in CAMERAS.items():
-    triggers.append({"trigger": "conversation", "id": entity, "command": [f"{VERB} [the | my] {names} [{NOUN}]"]})
-    choices.append({"conditions": [{"condition": "trigger", "id": entity}], "sequence": [
-        {"action": "view_assist.navigate",
-         "data": {"device": DEVICE, "path": f"/view-assist/camera?camera={entity}&timeout=120"}},
+for view, (label, names) in CAMERAS.items():
+    triggers.append({"trigger": "conversation", "id": view, "command": [f"{VERB} [the | my] {names} [{NOUN}]"]})
+    choices.append({"conditions": [{"condition": "trigger", "id": view}], "sequence": [
+        {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": view, "revert_timeout": SHOW_SECONDS}},
         {"set_conversation_response": f"Showing the {label} camera"}]})
 
 config = {"alias": "Smart Display - Show cameras by voice",

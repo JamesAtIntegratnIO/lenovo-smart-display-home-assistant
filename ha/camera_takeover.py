@@ -2,7 +2,8 @@
 """Create the automation that puts a camera on the Smart Display when something happens there.
 
 A person or vehicle detection on a UniFi Protect camera, or a ring of the doorbell, switches
-the display to that camera full screen. When the camera has been quiet for CLEAR_SECONDS the
+the display to that camera's full-screen live view (/smart-display/cam-<name>, an Advanced
+Camera Card built by ha/build_smart_display.py). When the camera has been quiet for CLEAR_SECONDS the
 display goes back to the view it was on. Raw motion is not a trigger: trees and shadows
 would take the screen over all day.
 
@@ -19,6 +20,12 @@ RING_HOLD_SECONDS = 30 # after a doorbell ring, other cameras cannot take the sc
 DOORBELL_RING = "event.g4_doorbell_pro_poe_doorbell"
 MARK = "takeover=1"    # in the path, so the automation can tell its own camera view from one asked for by voice
 
+VIEWS = {  # camera -> its full-screen view; the names are the slugs in ha/build_smart_display.py CAMERAS
+    "camera.front_doorbell_medium_resolution_channel": "/smart-display/cam-doorbell",
+    "camera.front_driveway_medium_resolution_channel": "/smart-display/cam-driveway",
+    "camera.front_landscape_medium_resolution_channel": "/smart-display/cam-landscape",
+    "camera.back_yard_medium_resolution_channel": "/smart-display/cam-back-yard",
+}
 CAMERAS = {  # medium stream (the display decodes at most 1080p) -> detection sensors that trigger it
     "camera.front_doorbell_medium_resolution_channel": [
         "binary_sensor.g4_doorbell_pro_poe_person_detected",
@@ -79,6 +86,7 @@ actions = [
     {"variables": {
         "camera": "{{ trigger.id }}",
         "sensors": CAMERAS,
+        "views": VIEWS,
         "started": "{{ now().isoformat() }}",
         # Already showing a takeover (this run restarted an earlier one): keep the first return point.
         "came_from": f"{{% if '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') and '|' in states('{RETURN_HELPER}') %}}"
@@ -86,25 +94,22 @@ actions = [
                      f"{{% else %}}{{{{ state_attr('{DISPLAY}', 'mode') or 'normal' }}}}|"
                      f"{{{{ state_attr('{DISPLAY}', 'current_path') or '/smart-display/home' }}}}{{% endif %}}"}},
     {"action": "input_text.set_value", "target": {"entity_id": RETURN_HELPER}, "data": {"value": "{{ came_from }}"}},
-    # No timeout in the path: the camera view holds the screen until this automation gives it back.
+    # revert_timeout 0: View Assist leaves the view alone, so the camera holds the screen until this
+    # automation gives it back. The mode is not touched (View Assist's own camera screen set "hold").
     {"action": "view_assist.navigate",
-     "data": {"device": DISPLAY, "path": f"/view-assist/camera?camera={{{{ camera }}}}&{MARK}"}},
+     "data": {"device": DISPLAY, "path": f"{{{{ views[camera] }}}}?{MARK}", "revert_timeout": 0}},
     # Poll until the camera has been quiet long enough, or someone moves the display elsewhere.
     {"repeat": {
         "sequence": [{"delay": {"seconds": 3}}],
         "until": [{"condition": "or", "conditions": [
             {"condition": "template", "value_template": DONE},
             {"condition": "template", "value_template": LEFT}]}]}},
-    # The camera view put View Assist in "hold" mode and nothing else takes it out again, so the
-    # mode is restored either way. If someone moved the display, they stay on the view they chose.
-    {"variables": {"go_to": f"{{% if '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') %}}"
-                            "{{ came_from.split('|', 1)[1] }}"
-                            f"{{% else %}}{{{{ state_attr('{DISPLAY}', 'current_path') }}}}{{% endif %}}"}},
-    {"action": "view_assist.set_state", "target": {"entity_id": DISPLAY},
-     "data": {"mode": "{{ came_from.split('|', 1)[0] }}"}},
-    # View Assist goes to its home screen when the mode changes; let that land before navigating.
-    {"delay": {"seconds": 1}},
-    {"action": "view_assist.navigate", "data": {"device": DISPLAY, "path": "{{ go_to }}"}},
+    # Still on the camera: go back to where the display was. If someone moved the display (a tap on
+    # the picture opens the camera grid), they stay on the view they chose.
+    {"if": [{"condition": "template",
+             "value_template": f"{{{{ '{MARK}' in (state_attr('{DISPLAY}', 'current_path') or '') }}}}"}],
+     "then": [{"action": "view_assist.navigate",
+               "data": {"device": DISPLAY, "path": "{{ came_from.split('|', 1)[1] }}"}}]},
 ]
 
 config = {"alias": "Smart Display - Show camera on detection or doorbell",
