@@ -61,7 +61,7 @@ def section(title, cards, icon=None, span=1):
 NAV = [  # (view path, icon)
     ("home", "mdi:home"), ("lights", "mdi:lightbulb-group"), ("cameras", "mdi:cctv"),
     ("outside", "mdi:home-roof"), ("music", "mdi:music"), ("media", "mdi:television-play"),
-    ("sports", "mdi:football"),
+    ("sports", "mdi:football"), ("alarm", "mdi:shield-home"),
 ]
 
 
@@ -262,6 +262,27 @@ sports = {
     ],
 }
 
+# ---------------------------------------------------------------- Alarm
+# Alarm.com panel (custom integration, see docs/alarmdotcom.md). The keypad shows because the
+# integration has an arm code set, which makes the entity report a numeric code format.
+ALARM = "alarm_control_panel.panel"
+alarm = {
+    "title": "Alarm", "path": "alarm", "icon": "mdi:shield-home", "type": "sections",
+    "max_columns": 2, "dense_section_placement": True,
+    "sections": [
+        {"type": "grid", "cards": [
+            {"type": "alarm-panel", "entity": ALARM, "name": "Alarm", "states": ["arm_home", "arm_away"],
+             "grid_options": {"columns": 12}},
+        ]},
+        section("Sensors", [
+            tile("binary_sensor.doors", "Doors", cols=12),
+            tile("binary_sensor.bedroom_windows", "Bedroom windows", cols=12),
+            tile("binary_sensor.living_room_motion", "Living room motion", cols=12),
+            tile("binary_sensor.panel_malfunction", "Panel fault", cols=12),
+        ], "mdi:shield-check"),
+    ],
+}
+
 # ---------------------------------------------------------------- Music
 # Shown by voice music requests in place of View Assist's own music screen.
 MUSIC_PLAYER = "media_player.vaca_ha0000xx_media_player_2"
@@ -288,7 +309,7 @@ saver = {
                "dark_entity": "input_boolean.kitchen_display_dark"}],
 }
 
-views = [home, lights, cameras, outside, music, media, sports]
+views = [home, lights, cameras, outside, music, media, sports, alarm]
 for v in views:
     v["sections"].insert(0, nav_strip(v["path"]))
 config = {"views": views + camera_views + [saver]}

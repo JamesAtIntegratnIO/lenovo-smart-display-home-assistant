@@ -571,10 +571,16 @@ Design decisions, all learned by looking at screenshots from the device
 
 - At 1024 px wide, a sections view fits **two** columns, not three.
 - The Home Assistant top bar is hidden on the display (step 10d), so every view starts
-  with its own row of seven icon buttons for navigation.
+  with its own row of eight icon buttons for navigation (eight buttons three grid
+  columns wide fill the row exactly).
 - Views: **Home** (clock, thermostat, timers card, quick actions, door locks),
   **Lights**, **Cameras** (2x2 grid), **Outside**, **Music**, **Media** (TV, vacuum),
-  **Sports** (TeamTracker card).
+  **Sports** (TeamTracker card), **Alarm** (stock `alarm-panel` card for the alarm panel
+  with Arm home / Arm away, next to tiles for the door, window and motion sensors and the
+  panel fault sensor). The alarm card only draws its keypad when the alarm entity reports
+  `code_format: number`; with the Alarm.com custom integration that means setting an arm
+  code in the integration's options. The keypad and the four tiles fit the 600 px screen
+  without scrolling.
 - Cameras use [Advanced Camera Card](https://card.camera). The grid shows a snapshot of
   each camera that refreshes every 10 seconds; tapping one opens that camera live on its
   own full-screen view (`/smart-display/cam-<name>`), and tapping the live picture goes back
