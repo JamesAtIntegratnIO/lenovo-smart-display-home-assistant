@@ -72,7 +72,7 @@ Android Things 8.1 (API 27), hardware H.264 decode up to 1920x1088.
 
 Prerequisites assumed to exist already:
 
-- Home Assistant (this build: 2026.10.0, Home Assistant OS) with **HACS** installed.
+- Home Assistant (this build: 2026.10.1, Home Assistant OS; see the 2026.10.0 note in step 11) with **HACS** installed.
 - **Home Assistant Cloud** subscription, or another Assist pipeline with speech-to-text
   and text-to-speech.
 - A long-lived Home Assistant access token saved to `~/.hass_token` (file mode 600).
@@ -454,10 +454,10 @@ and a media player in one free app.
 
 ```bash
 cd downloads/apks
-curl -fsSL -O https://github.com/msp1974/ViewAssist_Companion_App/releases/download/v0.13.4/vaca-0.13.4.apk
+curl -fsSL -O https://github.com/msp1974/ViewAssist_Companion_App/releases/download/v0.13.5/vaca-0.13.5.apk
 cd ../..
 nix develop --command sh -c '
-adb install -r -g downloads/apks/vaca-0.13.4.apk      # -g grants microphone and camera
+adb install -r -g downloads/apks/vaca-0.13.5.apk      # -g grants microphone and camera
 adb shell monkey -p com.msp1974.vacompanion -c android.intent.category.LAUNCHER 1'
 ```
 
@@ -468,7 +468,7 @@ The app shows a blue "Waiting for connection" screen with its IP and port (10800
 **10b. In Home Assistant**
 
 1. HACS: install **View Assist Companion App** (`msp1974/ViewAssist_Companion_App`,
-   keep the version equal to the app's, here v0.13.4) and **View Assist**
+   keep the version equal to the app's, here v0.13.5) and **View Assist**
    (`dinki/view_assist_integration`, here 2026.7.0). Restart Home Assistant.
 2. Settings > Devices & services > Add integration > **View Assist Companion App**.
    Auto-discovery (mDNS) does not cross VLANs, so enter host `192.168.9.253`, port `10800`.
@@ -518,6 +518,31 @@ python3 ha/ha_rest.py POST /api/services/number/set_value '{"entity_id":"number.
 | Screen mode | Hide header and sidebar |
 
 After changing these, reload the entry and press `button.vaca_ha0000xx_refresh`.
+
+**10e. Updating the companion app later.** Update the integration first, then the app, and
+keep the two on the same version. Done here on 2026-10-11 for 0.13.4 to 0.13.5:
+
+```bash
+python3 ha/ha_rest.py POST /api/services/update/install '{"entity_id":"update.view_assist_companion_app_update"}'
+python3 ha/ha_rest.py POST /api/config/core/check_config        # "valid"
+python3 ha/ha_rest.py POST /api/services/homeassistant/restart '{}'
+# when Home Assistant is back:
+(cd downloads/apks && curl -fsSL -O https://github.com/msp1974/ViewAssist_Companion_App/releases/download/v0.13.5/vaca-0.13.5.apk)
+nix develop --command sh -c '
+adb install -r -g downloads/apks/vaca-0.13.5.apk     # -r keeps the app data, so every setting survives
+adb shell monkey -p com.msp1974.vacompanion -c android.intent.category.LAUNCHER 1'   # the install stops the app; start it again
+```
+
+The app can also update itself from a prompt on its screen, but that needs the display to
+reach GitHub. After the update here, every VACA entity kept its value (compared before and
+after), the `WRITE_SETTINGS` permission from step 17 and the camera grant were still in
+place, and `sensor.vaca_ha0000xx_app_version` read 0.13.5. To test the microphone path
+without anyone in the room, play speech from the display's own speaker: a text-to-speech
+"Okay Nabu" on `media_player.vaca_ha0000xx_media_player` triggered the wake word
+(`assist_satellite.vaca_ha0000xx` went to `listening`) in two tries out of three, and with
+`number.vaca_ha0000xx_ducking_volume` raised for the test (music is ducked to almost
+nothing while it listens; set it back to 1 afterwards), pressing `button.vaca_ha0000xx_wake`
+while a spoken question played came back from cloud speech-to-text as text and was answered.
 
 ---
 
@@ -614,40 +639,32 @@ python3 ha/ha_rest.py POST /api/states/event.g4_doorbell_pro_poe_doorbell \
   between the two. Coming back to a view other than Home shows Home for that second.
 - A view other than Home is still subject to View Assist's own view timeout afterwards
   (20 seconds here), exactly as if it had been opened by voice.
-- **Home Assistant 2026.10.0 only:** opening a camera live flips its entity to
-  `unavailable`. That release moved to FFmpeg 9, which verifies TLS certificates by
-  default, and Protect serves RTSPS with a self-signed certificate. The HLS stream worker
-  fails ("Error opening stream (I/O error, rtsps://…)") and keeps retrying, while the
-  display's WebRTC picture is fine, so the takeover automation does not check the entity's
-  state. This is [home-assistant/core#184775](https://github.com/home-assistant/core/issues/184775),
-  fixed in 2026.10.1. Until you are on 2026.10.1 or later, run
-  `python3 ha/protect_stream_workaround.py`: it creates an automation that reloads the
-  UniFi Protect integration shortly after a camera drops, once the display has left the
-  camera view. Delete that automation after updating.
+- **Home Assistant 2026.10.0 only (fixed in 2026.10.1, workarounds retired):** opening a
+  camera live flipped its entity to `unavailable`. That release moved to FFmpeg 9, which
+  verifies TLS certificates by default, and Protect serves RTSPS with a self-signed
+  certificate, so the HLS stream worker failed ("Error opening stream (I/O error,
+  rtsps://…)") while the display's WebRTC picture was fine. This is
+  [home-assistant/core#184775](https://github.com/home-assistant/core/issues/184775), fixed
+  in 2026.10.1 (PRs 184877 and 184930). Skip 2026.10.0 if you can.
 
-  **The same bug also blanks the camera snapshots on the display**, and that needs a second
-  workaround. Home Assistant's frontend starts an HLS player next to the WebRTC one for
-  every live camera view. On 2026.10.0 the HLS playlist request
-  (`/api/hls/<token>/master_playlist.m3u8`) never gets an answer, and the frontend does not
-  cancel it when the view closes. Each live view therefore leaves two requests hanging for
-  good. A browser allows six connections per server, so after three live views every later
-  request to Home Assistant queues forever: the Cameras grid shows grey tiles or broken-image
-  icons, and even a page reload hangs. Home Assistant itself is fine throughout (the same
-  snapshot URL answers `curl` from the display in half a second), which is what makes it
-  confusing. Restarting the companion app clears it until the next three live views.
+  The same bug blanked the camera snapshots on the display. Home Assistant's frontend starts
+  an HLS player next to the WebRTC one for every live camera view. On 2026.10.0 the HLS
+  playlist request (`/api/hls/<token>/master_playlist.m3u8`) never got an answer and was not
+  cancelled when the view closed, so each live view left two requests hanging for good. A
+  browser allows six connections per server, so after three live views every later request
+  to Home Assistant queued forever: grey tiles or broken-image icons on the Cameras grid,
+  and even a page reload hung. Home Assistant itself was fine throughout (the same snapshot
+  URL answered `curl` from the display in half a second), which is what made it confusing.
 
-  Fix until 2026.10.1:
-
-  ```bash
-  nix develop --command sh -c '$AVB_PYTHON ha/hls_guard.py install'
-  ```
-
-  This registers `ha/frontend/hls_guard.js` as a dashboard resource (as a `data:` URL, so no
-  file has to be copied into Home Assistant). It makes `fetch` and `XMLHttpRequest` refuse
-  `/api/hls/` URLs, only when the browser's user agent contains `mt8167s`, so every other
-  browser is untouched. The frontend then carries on with WebRTC alone. Verified from a clean
-  start: five live views in a row left no request hanging, all four cameras stayed available,
-  and the grid loaded. Remove it after updating with `ha/hls_guard.py remove`.
+  This build carried two workarounds for those two days: an automation that reloaded the
+  UniFi Protect integration after a camera dropped (`ha/protect_stream_workaround.py`), and
+  a dashboard resource that refused `/api/hls/` requests on the display only
+  (`ha/hls_guard.py`, `ha/frontend/hls_guard.js`). Both were removed on 2026-10-11 after
+  updating to 2026.10.1 and are no longer in this folder (they are in the git history up to
+  commit `8f00dbf`). The test that retired them, with both switched off: six live views in a
+  row across the four cameras. Every camera entity stayed `recording`, the master playlist
+  answered `200` each time, nothing was left pending, and the snapshot grid loaded
+  afterwards.
 
   How it was found, since this technique is useful for any display-side problem: the WebView
   exposes Chrome's remote debugger.
@@ -1192,7 +1209,7 @@ The same file reports touches on every view of the display (user agent check, at
 report per 20 seconds).
 
 **17a.6 The automations.** `$AVB_PYTHON ha/screen_saver.py` registers the card as a
-dashboard resource (a `data:` URL, like the HLS guard), creates the helpers and three automations:
+dashboard resource (a `data:` URL, so no file has to be copied into Home Assistant), creates the helpers and three automations:
 
 - **Smart Display - Activity** presses `input_button.kitchen_display_activity` when the
   proximity sensor reports someone close, the voice satellite changes state (the wake word
@@ -1250,8 +1267,8 @@ the page). It worked, but a dark clock was preferred to a dead screen.
 | Generic score request reports the wrong team | Shared tracker keeps the last team | Default-team automation | Tested after asking about another team |
 | Camera tiles broken on the main Overview | 3 of 4 high-resolution camera entities were unavailable in Home Assistant; high-res streams are also beyond the decoder | Medium resolution entities | Entity states; WebRTC "No decodable frame" in `logcat` |
 | Camera takeover returned to Home instead of the previous view | View Assist goes to its home screen on a mode change, and that landed after the automation's own navigate | Restore the mode, wait 1 s, then navigate | History of `sensor.vaca_…_current_path` showed the right view for under a millisecond |
-| Camera entities flip to `unavailable` after a live view | Home Assistant 2026.10.0 ships FFmpeg 9, which rejects Protect's self-signed RTSPS certificate, so the HLS stream worker fails for every camera; WebRTC on the display still works | Update to 2026.10.1 or later. Until then `ha/protect_stream_workaround.py` reloads the integration after a drop | `system_log/list`; requesting `camera/stream` for a healthy camera broke it too; `ffmpeg -i rtsps://…` printed "Peer certificate failed verification"; core issue 184775 |
-| Camera snapshots blank on the display (grey tiles, broken-image icons) | Same 2026.10.0 bug: each live view leaves two HLS playlist requests hanging, and six fill the browser's connection limit | `ha/hls_guard.py install` (refuses HLS on the display); restart the app to clear it once | WebView remote debugger network trace; `netstat` on the device; the same URL answered `curl` instantly |
+| Camera entities flip to `unavailable` after a live view | Home Assistant 2026.10.0 ships FFmpeg 9, which rejects Protect's self-signed RTSPS certificate, so the HLS stream worker fails for every camera; WebRTC on the display still works | Update to 2026.10.1 or later (done 2026-10-11; the reload automation used in between is retired) | `system_log/list`; requesting `camera/stream` for a healthy camera broke it too; `ffmpeg -i rtsps://…` printed "Peer certificate failed verification"; core issue 184775 |
+| Camera snapshots blank on the display (grey tiles, broken-image icons) | Same 2026.10.0 bug: each live view leaves two HLS playlist requests hanging, and six fill the browser's connection limit | Update to 2026.10.1 or later (done 2026-10-11; the HLS guard resource used in between is retired); restart the app to clear it once | WebView remote debugger network trace; `netstat` on the device; the same URL answered `curl` instantly |
 | Music "playing" but silent | IoT VLAN could not reach Music Assistant's stream port 8097 | Firewall rule | `logcat` showed the stream URL; `curl` to 8097 from the device returned nothing |
 | Rocker not loud enough | Android media stream was at 40 of 100 underneath the player's volume | Drive the stream itself | `dumpsys audio` |
 | Rocker steps uneven | Android's volume curve | 3 dB table | `dumpsys media.audio_policy` |
@@ -1327,8 +1344,6 @@ setting in step 17.
 - **Stop cameras taking over the screen:** disable or delete the "Smart Display - Show
   camera on detection or doorbell" automation and the
   `input_text.den_display_takeover_return` helper.
-- **After updating Home Assistant to 2026.10.1 or later:** delete the "Smart Display -
-  Reload Protect when a camera drops" automation, and run `ha/hls_guard.py remove`.
 - **Remove the screen saver:** `$AVB_PYTHON ha/screen_saver.py remove` (automations, card
   resource, camera detection off), delete the `saver` view from `ha/build_smart_display.py`
   and rebuild, delete the `kitchen_display` helpers and the "Refresh photo album"
@@ -1357,7 +1372,7 @@ setting in step 17.
 | Display serial | `HA0000XX` |
 | Display Wi-Fi MAC | `aa:bb:cc:dd:ee:01` |
 | Display IP (reserved) | `192.168.9.253` on IoT VLAN `192.168.8.0/23`, gateway `192.168.8.1` |
-| Home Assistant | `http://10.0.1.174:8123`, version 2026.10.0 |
+| Home Assistant | `http://10.0.1.174:8123`, version 2026.10.1 |
 | Admin computer wired MAC | `aa:bb:cc:dd:ee:02` |
 | VACA device name / id suffix | `vaca_ha0000xx` |
 | View Assist device entity | `sensor.den_display` (named "Kitchen display") |
@@ -1381,7 +1396,8 @@ Ids like the pipeline and config entries are generated per install. Find yours w
 | Firmware flashed | Android Things 8.1.0, `OIMC.190719.013/5813256`, userdebug |
 | nixpkgs | `39ad350a0602fa0a58a544344e3e9187526ea45c` (nixpkgs-unstable, 2026-10-07) |
 | android-tools | 37.0.0 |
-| View Assist Companion App | 0.13.4 (app and integration) |
+| Home Assistant | 2026.10.1 (built on 2026.10.0) |
+| View Assist Companion App | 0.13.5 (app and integration; installed as 0.13.4, updated 2026-10-11) |
 | View Assist integration | 2026.7.0 |
 | TeamTracker / card | 0.18.4 / 0.17.2 |
 | button-card / layout-card / card-mod | 7.0.1 / 2.4.7 / 4.2.1 |
@@ -1397,7 +1413,8 @@ SHA-256:
 8e2ae30844961614cff7e4aeb1ed0d4d08d1f617aaf27d0835b79ed91d0c8be3  Lenovo-Android-Things-avb-unlock.zip
 b7268786318f404bdad53eaaec889619ff30100b935541a9e393e32efed3cf11  lineage-webview-138.0.7204.63-arm.apk
 b8affd986041afc9f47f59a3b5953b791a06401fb77682cff551ed4d68c32885  simple-keyboard-148.apk
-8769df7bca33c14254a58049a825cf58d3dd7b3272156225662bb4810b9f8f8d  vaca-0.13.4.apk
+e4708acf99ab2b162373708bf8b122e3c387c5062a3e136356ef941df6868d2f  vaca-0.13.5.apk
+8769df7bca33c14254a58049a825cf58d3dd7b3272156225662bb4810b9f8f8d  vaca-0.13.4.apk (the version first installed)
 42df2da1ef35074611159e1b07c7d16a442ba72079b652d1dd7d5168aa43dec7  fully-kiosk-1.61.4.apk
 2064adcf5e17a374857881f2aa4a055b741be0342fa8f5c852859946319ce3cd  stock-webview-66.0.3359.158.apk (pulled from the device)
 ```

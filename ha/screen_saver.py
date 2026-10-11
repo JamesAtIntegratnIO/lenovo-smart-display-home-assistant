@@ -94,7 +94,7 @@ def ours(res):
 
 
 async def resource(install):
-    """Register the card as a `data:` URL resource, as ha/hls_guard.py does: nothing to copy to Home Assistant."""
+    """Register the card as a `data:` URL resource: nothing to copy to Home Assistant."""
     for r in (await call([{"type": "lovelace/resources"}]))[0]:
         if ours(r):
             await call([{"type": "lovelace/resources/delete", "resource_id": r["id"]}])

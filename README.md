@@ -20,7 +20,7 @@ named "Den display", and the entity ids still say so (`sensor.den_display`,
 
 ## What it does now
 
-- Boots into **View Assist Companion App** (VACA 0.13.4) showing the `/smart-display` dashboard.
+- Boots into **View Assist Companion App** (VACA 0.13.5) showing the `/smart-display` dashboard.
 - **Voice**: wake word "Okay Nabu" (microWakeWord), Home Assistant Cloud speech-to-text and
   text-to-speech, local phrases first, Claude (Haiku 5.5 with web search) for everything else.
 - **By voice**: timers and alarms, cameras by name, NFL scores (Seahawks by default),
@@ -74,8 +74,6 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/themes/storm_at_sea.yaml`, `ha/install_theme.sh` | "Storm at Sea" dark theme (navy, slate, sea green, high-contrast text for the 7" screen) and the script that copies it to Home Assistant and makes it the default dark theme. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
 | `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
-| `ha/protect_stream_workaround.py` | Temporary: reloads UniFi Protect when a camera drops on Home Assistant 2026.10.0. Not needed from 2026.10.1. |
-| `ha/hls_guard.py`, `ha/frontend/hls_guard.js` | Temporary: stops live camera views from exhausting the display browser's connections on Home Assistant 2026.10.0. |
 | `ha/screen_saver.py`, `ha/frontend/kitchen_saver.js` | Burn-in protection: the activity, screen saver and light level automations, their helpers, and the saver card (slideshow with clock, or dark clock). Settings are constants at the top of the script. |
 | `ha/photo_album.py`, `ha/album_sync.py` | The slideshow's photos: a helper holding one shared Google Photos album link, and the script Home Assistant runs every 6 hours to copy that album to `/config/www/kitchen_display/`. |
 | `ha/volume_buttons.py` | The volume rocker automation (webhooks, 3 dB positions). |
@@ -112,7 +110,7 @@ refresh it if the Overview's quick actions or roof themes change.
    debug image in slot B.
 3. `adb disable-verity`, so `/system` can be modified.
 4. Stock WebView 66 removed from `/system`; LineageOS WebView 138.0.7204.63 installed as an app.
-5. Installed: VACA 0.13.4, Simple Keyboard, Fully Kiosk 1.61.4 (now `pm disable`d).
+5. Installed: VACA 0.13.5 (0.13.4 at first, updated in place with `adb install -r`), Simple Keyboard, Fully Kiosk 1.61.4 (now `pm disable`d).
 6. Google packages disabled: `com.google.assistant.core`, `…things.internal.iotsetupwizard`,
    `…apps.quartz`, `…apps.mediashell`, `…things.checkin`, `…things.customcheckin`.
 7. `persist.adb.tcp.port=5555`.
@@ -145,8 +143,8 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
 - **Automations**: three "View Assist - …" blueprint instances and ten "Smart Display - …"
   ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,
-  sports default team, activity, screen saver, light level, refresh photo album, and a temporary one that
-  reloads UniFi Protect when a camera drops; see `ha/`).
+  sports default team, shuffle local music requests, activity, screen saver, light level and
+  refresh photo album; see `ha/`).
 - **Helpers**: `input_text.den_display_takeover_return`, where the camera automation keeps
   the view to go back to; `input_button.kitchen_display_activity` (pressed on every sign of
   life at the display), `input_text.kitchen_display_saver_return`,
@@ -191,19 +189,16 @@ refresh it if the Overview's quick actions or roof themes change.
   why the rocker goes through Home Assistant.
 - **View Assist goes to its home screen whenever the mode changes.** To return to another
   view after a camera, restore the mode first, wait a second, then navigate.
-- **Home Assistant 2026.10.0 marks UniFi Protect cameras `unavailable` after any live view**
-  while the picture on the display is fine. FFmpeg 9 in that release rejects Protect's
-  self-signed RTSPS certificate ([core issue 184775](https://github.com/home-assistant/core/issues/184775)).
-  Fixed in 2026.10.1; until then `ha/protect_stream_workaround.py` reloads the integration
-  after each drop. Delete that automation after updating.
-- **The same bug blanks the camera snapshots on the display.** The frontend starts HLS next
-  to WebRTC for every live view, the HLS playlist request never answers on 2026.10.0, and it
-  is not cancelled when the view closes. Each live view leaves two requests hanging; a
-  browser allows six connections per server, so after three live views nothing else loads.
-  `ha/hls_guard.py install` registers a small script (`ha/frontend/hls_guard.js`) that
-  refuses HLS on the display only, so live views use WebRTC alone. Run
-  `ha/hls_guard.py remove` after updating. Found with the WebView's remote debugger
-  (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`).
+- **Skip Home Assistant 2026.10.0 with UniFi Protect.** FFmpeg 9 in that release rejects
+  Protect's self-signed RTSPS certificate ([core issue 184775](https://github.com/home-assistant/core/issues/184775)):
+  cameras went `unavailable` after any live view, and each live view left two HLS requests
+  hanging in the display's browser until its six connections were used up and the camera
+  snapshots went blank. Fixed in 2026.10.1. The two workarounds this build carried (an
+  automation reloading Protect, and a dashboard script refusing HLS on the display) were
+  tested off and removed on 2026-10-11; BUILD-GUIDE step 11 has the story and the test.
+- **The WebView's remote debugger finds display-side problems**
+  (`adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`, then the DevTools
+  protocol). It is how the hanging requests were found.
 - **VACA's camera motion detection needs a front camera, and this HAL says "back".** The
   facing is one byte of static metadata in `libcam.metadataprovider.so` (BUILD-GUIDE step
   17a.1). Detection then costs about half of one core once boot has settled (0.9 at first).
