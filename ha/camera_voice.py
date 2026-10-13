@@ -23,7 +23,8 @@ triggers = [{"trigger": "conversation", "id": "all", "command": [
     f"{VERB} all [the | my] {NOUN}",
 ]}]
 choices = [{"conditions": [{"condition": "trigger", "id": "all"}], "sequence": [
-    {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": "/smart-display/cameras"}},
+    # The grid is a tab like any other: revert_timeout 0 keeps it up (View Assist would go home after 20 s).
+    {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": "/smart-display/cameras", "revert_timeout": 0}},
     {"set_conversation_response": "Showing all cameras"}]}]
 for view, (label, names) in CAMERAS.items():
     triggers.append({"trigger": "conversation", "id": view, "command": [f"{VERB} [the | my] {names} [{NOUN}]"]})

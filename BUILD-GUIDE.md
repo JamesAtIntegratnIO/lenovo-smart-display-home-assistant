@@ -826,7 +826,10 @@ request and uses one catch-all slot for the name, which would also capture "show
 timers".
 
 **12d. Navigation.** `python3 ha/nav_voice.py` creates "go home", "show me the lights",
-and similar for each dashboard view.
+and similar for each dashboard view. A view opened by voice stays up like one opened by
+touch: the navigation is sent with `revert_timeout: 0`, as is "show all cameras" in 12c
+(without it View Assist goes home after its 20 second view timeout). A single camera asked
+for by name still closes after `SHOW_SECONDS` (120).
 
 **12d-2. Back to the tab after an answer.** `python3 ha/tab_return.py` creates "Smart Display -
 Back to the tab after a voice answer". A spoken answer, a timer or an alarm opens one of View

@@ -13,7 +13,9 @@ VIEWS = {  # view path -> (spoken reply, phrases)
 }
 triggers = [{"trigger": "conversation", "id": path, "command": cmds} for path, (_, cmds) in VIEWS.items()]
 choices = [{"conditions": [{"condition": "trigger", "id": path}], "sequence": [
-    {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": f"/smart-display/{path}"}},
+    # revert_timeout 0: the view stays until someone moves on. Without it View Assist sends any view
+    # but its home screen home after its view timeout (20 s).
+    {"action": "view_assist.navigate", "data": {"device": DEVICE, "path": f"/smart-display/{path}", "revert_timeout": 0}},
     {"set_conversation_response": reply}]} for path, (reply, _) in VIEWS.items()]
 config = {"alias": "Smart Display - Go to a view by voice",
           "description": "Jump to a Smart Display dashboard view on the display that heard the request",
