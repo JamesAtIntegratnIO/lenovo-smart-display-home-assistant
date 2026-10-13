@@ -497,7 +497,7 @@ The device then has about 45 entities, among them `assist_satellite.vaca_ha0000x
 | `select.…_assistant` | Home Assistant Cloud | the pipeline with STT and TTS |
 | `select.…_wake_word_engine` | **microwakeword** | openwakeword overloads this CPU, see step 18 |
 | `select.…_wake_word` | Okay Nabu | set it again after changing engine; the list differs per engine |
-| `number.…_wake_word_threshold` | 5 | default 6 only just triggered (score 0.64 vs 0.60) |
+| `number.…_wake_word_threshold` | 6 | the default. 5 was used for the first days (6 only just triggered, score 0.64 vs 0.60) but woke on random kitchen speech: 5 of 7 wakes in a day had no words in them |
 | `select.…_wake_word_sound` | Home Assistant | without a chime there is no sign it is listening |
 | `number.…_mic_gain` | 5 | restart the app after changing this, see step 18 |
 | `select.…_screen_orientation` | landscape | the panel is natively portrait |
@@ -687,7 +687,9 @@ helper it needs (`input_text.den_display_takeover_return`). Edit `CAMERAS` and
 - **Triggers:** UniFi Protect's person and vehicle detection sensors for each camera going
   on, and the doorbell's ring event. Raw motion is left out on purpose: it fires on
   shadows and trees and would take the screen over all day.
-- **What it does:** remembers the display's current view in the helper, then opens that
+- **What it does:** remembers the display's current view in the helper (read from
+  `sensor.vaca_…_current_path`, the companion app's own report of its page; View Assist's
+  `current_path` never sees a tab opened by touch), then opens that
   camera's full-screen view, `/smart-display/cam-<name>?takeover=1`, with
   `revert_timeout: 0`, so View Assist leaves the camera up until the automation gives the
   screen back. `VIEWS` in the script maps each camera to its view; the names are the slugs
@@ -695,15 +697,22 @@ helper it needs (`input_text.den_display_takeover_return`). Edit `CAMERAS` and
   picture takes over 5 to 10 seconds later (HLS start-up, see "Live video" above).
 - **Going back:** every 3 seconds it checks that camera's sensors. When they have all been
   off for `CLEAR_SECONDS` (30), or after `MAX_SECONDS` (300) whatever happens, it navigates
-  to the remembered view. View Assist's mode is never changed. (Until 2026-10-11 the
+  to the remembered view, with `revert_timeout: 0` again (without it View Assist sends any
+  view but its home screen home 20 seconds later). View Assist's mode is never changed. (Until 2026-10-11 the
   takeover used View Assist's own camera screen, which sets the mode to "hold"; the
   automation had to restore it and wait a second before navigating.)
 - **If a voice request or another automation moves the display during a takeover,** the
-  automation notices within 3 seconds and leaves the display where it is. A tap on the
-  live picture opens the camera grid; View Assist does not record navigation by touch, so
-  the display still returns to the remembered view once the camera is clear.
-- **Several cameras:** the newest detection wins and the first return point is kept (the
-  `takeover=1` marker is how the automation recognises its own camera view). For
+  automation notices within 3 seconds and leaves the display where it is. That includes a
+  touch (a tap on the live picture opens the camera grid): from 10 seconds into a takeover
+  the display's own path is checked as well, and the automation then only tells View Assist
+  where the display is, so its `current_path` does not keep the `takeover=1` marker.
+- **Several cameras:** a showing takeover is not replaced by another camera. One person out
+  front trips the doorbell, driveway and landscape cameras in turn, and with "newest
+  detection wins" the screen hopped between them (86 triggers in one day, ten view changes
+  in five minutes). Only the doorbell, its camera or a ring, takes the screen from another
+  camera; the first return point is kept (the `takeover=1` marker plus a camera view on the
+  display is how the automation recognises its own takeover). For `COOLDOWN_SECONDS` (120)
+  after a takeover starts, cameras other than the doorbell cannot start a new one. For
   `RING_HOLD_SECONDS` (30) after a doorbell ring, only the doorbell camera may take the screen.
 - **Do Not Disturb** on the View Assist device stops takeovers. Disabling the automation
   turns the feature off.
@@ -818,6 +827,13 @@ timers".
 
 **12d. Navigation.** `python3 ha/nav_voice.py` creates "go home", "show me the lights",
 and similar for each dashboard view.
+
+**12d-2. Back to the tab after an answer.** `python3 ha/tab_return.py` creates "Smart Display -
+Back to the tab after a voice answer". A spoken answer, a timer or an alarm opens one of View
+Assist's own views (`/view-assist/info`, `/view-assist/alarm`), and when it closes View Assist
+goes to its home screen whatever tab was showing. The automation notes the tab the answer
+opened over (from `sensor.vaca_…_current_path`) and navigates back to it when the display
+lands on Home. Not used from Home, the saver or a camera takeover, which look after themselves.
 
 **12e. Music phrases.** Blueprint "View Assist - Play Music with Music Assistant", after
 step 14. Inputs in `ha/blueprint_automations.py` (`view_path: /smart-display/music`, and
@@ -1310,7 +1326,8 @@ dashboard resource (a `data:` URL, so no file has to be copied into Home Assista
   picture reads as motion.
 - **Smart Display - Screen saver** starts when the button has been quiet for 5 minutes, the
   camera sees nobody, the satellite is idle, View Assist is in its normal mode and no camera
-  takeover is showing. It remembers the current view in
+  takeover is showing. It remembers the current view (the display's own
+  `sensor.vaca_…_current_path`, so a tab opened by touch counts) in
   `input_text.kitchen_display_saver_return`, opens the saver with
   `view_assist.navigate … revert_timeout: 0` (so View Assist's 20 second view timeout leaves
   it alone, with no mode change), then waits for the button or for the view to change, and
@@ -1319,10 +1336,10 @@ dashboard resource (a `data:` URL, so no file has to be copied into Home Assista
 
 Things that had to be handled:
 
-- **A camera takeover that starts on the saver hands the screen back to the saver** with the
-  normal view timeout, and View Assist would send it home 20 seconds later. The automation
-  picks a showing saver up again (template trigger) and re-sends the navigation with
-  `revert_timeout: 0`, which cancels that. The return view is not overwritten.
+- **A camera takeover that starts on the saver hands the screen back to the saver.** The
+  saver automation's run ended when the takeover took the screen, so it picks a showing saver
+  up again (template trigger) and re-sends the navigation with `revert_timeout: 0`. The return
+  view is not overwritten.
 - **Reloading the automation or restarting Home Assistant kills a running saver.** The same
   pick-up trigger, plus one on Home Assistant start, resumes it. If a touch arrives while
   nothing is listening, the card asks View Assist to go home itself after 4 seconds.
@@ -1368,6 +1385,9 @@ the page). It worked, but a dark clock was preferred to a dead screen.
 | VACA motion detection never reports | Camera HAL says the only camera faces back; VACA wants a front camera | One-byte patch to the camera's static metadata and a feature-file edit, step 17a.1 | `logcat` CameraX lines; `dumpsys media.camera` |
 | Album link helper `unavailable` after a restart | It had a `pattern` | Recreate without it; check the link in the command template | Entity state showed `restored: true` |
 | VACA brightness entities do nothing | App may not write system settings | `appops set … WRITE_SETTINGS allow` | Backlight sysfs value did not move; `appops get` showed a reject |
+| Display went to Home, not the tab it was on, after a camera takeover, the saver or a voice answer | Return points came from View Assist's `current_path`, which only follows `view_assist.navigate` and never sees a tab opened by touch; and View Assist closes its answer views to Home | Read `sensor.vaca_…_current_path` instead, return with `revert_timeout: 0`, and `ha/tab_return.py` for answer views | History of both sensors side by side: Music by touch at 00:16, takeover at 00:19, Home at 00:20 |
+| Wake word fired on random speech | Threshold 5 (below the default) | Threshold 6 | Pipeline debug runs: 5 of 7 in a day ended `stt-no-text-recognized` |
+| Screen hopped between cameras as one person walked up | Each camera's detection restarted the takeover on its own view | Only the doorbell takes the screen from another camera; 120 s cooldown for the others | Automation logbook: 86 triggers, 28 episodes in a day |
 | Saver went home 20 s after a camera takeover handed back | The takeover navigates with the normal view timeout | Saver re-sends its navigation with `revert_timeout: 0` | `current_path` history |
 | Screen flipped to portrait | The orientation had been forced by the earlier kiosk app | VACA orientation = landscape | Screenshot was 600x1024 |
 | Force-stopping VACA dropped Wi-Fi for 15 s | The app holds the Wi-Fi lock | Avoid, or expect it | `wpa_supplicant` log: "reason=3 locally_generated=1" |

@@ -28,8 +28,9 @@ named "Den display", and the entity ids still say so (`sensor.den_display`,
 - **Recipes and how-tos**: "how do I make peach cobbler" is web searched, answered from one
   named site with a one-line summary, and the page is sent to the owner's phone as a notification.
 - **Cameras come to you**: a person or vehicle on a UniFi Protect camera, or a ring of the
-  doorbell, puts that camera on the screen, live. It goes back to what it was showing 30
-  seconds after the camera is clear.
+  doorbell, puts that camera on the screen, live. It goes back to the tab it was on 30
+  seconds after the camera is clear. Cameras do not take the screen from each other; only
+  the doorbell does.
 - **Camera views** are [Advanced Camera Card](https://card.camera): a grid of four
   refreshing snapshots, and one full-screen live view per camera (30 fps over HLS) opened
   by a tap, by voice or by a detection.
@@ -76,7 +77,8 @@ Captured from the display itself (1024x600) with `adb exec-out screencap -p`.
 | `ha/build_smart_display.py` | Generates the dashboard (`ha/smart-display.yaml`) from the main Overview. |
 | `ha/themes/storm_at_sea.yaml`, `ha/install_theme.sh` | "Storm at Sea" dark theme (navy, slate, sea green, high-contrast text for the 7" screen) and the script that copies it to Home Assistant and makes it the default dark theme. |
 | `ha/camera_voice.py`, `ha/nav_voice.py` | Voice automations for cameras and screen navigation. |
-| `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the previous view. |
+| `ha/camera_takeover.py` | The automation that shows a camera on a person or vehicle detection or a doorbell ring, then returns to the view the display was on. Only the doorbell takes the screen from another camera, and other cameras wait `COOLDOWN_SECONDS` (120) after a takeover starts. |
+| `ha/tab_return.py` | The automation that puts the display back on its tab after a voice answer, timer or alarm view closes (View Assist would leave it on Home). |
 | `ha/hls_only.py`, `ha/frontend/hls_only.js` | Makes live cameras on the display play over HLS instead of WebRTC, which freezes on this display's Wi-Fi. A display-only dashboard resource. |
 | `ha/screen_saver.py`, `ha/frontend/kitchen_saver.js` | Burn-in protection: the activity, screen saver and light level automations, their helpers, and the saver card (slideshow with clock, or dark clock). Settings are constants at the top of the script. |
 | `ha/photo_album.py`, `ha/album_sync.py` | The slideshow's photos: a helper holding one shared Google Photos album link, and the script Home Assistant runs every 6 hours to copy that album to `/config/www/kitchen_display/`. |
@@ -145,8 +147,9 @@ refresh it if the Overview's quick actions or roof themes change.
 - **Exposed to voice** in addition to the defaults: the display's Music Assistant player,
   `script.den_display_play_music` and `script.send_link_to_phone`.
 - **Dashboard** `smart-display` (generated), separate from the main Overview.
-- **Automations**: three "View Assist - …" blueprint instances and ten "Smart Display - …"
-  ones (cameras by voice, camera on detection or doorbell, navigation, volume buttons,
+- **Automations**: three "View Assist - …" blueprint instances and eleven "Smart Display - …"
+  ones (cameras by voice, camera on detection or doorbell, back to the tab after a voice
+  answer, navigation, volume buttons,
   sports default team, shuffle local music requests, activity, screen saver, light level and
   refresh photo album; see `ha/`).
 - **Helpers**: `input_text.den_display_takeover_return`, where the camera automation keeps
@@ -162,8 +165,8 @@ refresh it if the Overview's quick actions or roof themes change.
   registered as `data:` URLs (the second only acts on the display).
 - **Camera entities**: the four "Medium resolution channel" UniFi Protect cameras enabled,
   because the display decodes at most 1920x1088 H.264.
-- **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 5,
-  mic gain 5, wake sound "Home Assistant", assistant "Home Assistant Cloud", landscape,
+- **VACA device settings**: wake engine microwakeword, wake word "Okay Nabu", threshold 6
+  (5 woke on random speech about five times a day), mic gain 5, wake sound "Home Assistant", assistant "Home Assistant Cloud", landscape,
   motion detection "motion" at sensitivity 20.
 
 ## What was done on the network (UniFi)
@@ -195,6 +198,11 @@ refresh it if the Overview's quick actions or roof themes change.
 - **View Assist goes to its home screen whenever the mode changes.** To return to another
   view after changing it, restore the mode first, wait a second, then navigate. The camera
   takeover avoids the mode altogether now.
+- **View Assist's `current_path` only follows `view_assist.navigate`.** A tab opened by touch
+  never shows up there, so anything that has to return "where the display was" reads
+  `sensor.vaca_…_current_path` (the companion app's own report) instead. And any
+  `view_assist.navigate` to a view other than home needs `revert_timeout: 0`, or View Assist
+  sends the display home after its 20 second view timeout.
 - **WebRTC video freezes on this display; HLS does not.** About 1 UDP packet in 5 is lost
   on its Wi-Fi link and nothing resends them, so a WebRTC camera ran for 20-30 seconds and
   then showed a frame every few seconds. `ha/frontend/hls_only.js` makes the display ask

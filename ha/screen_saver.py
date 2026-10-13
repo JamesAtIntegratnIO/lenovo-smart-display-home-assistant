@@ -59,6 +59,7 @@ MOTION_SENSITIVITY = 20  # 0-100. Sees a person across the room, which is its jo
 
 DEV = "vaca_ha0000xx"
 DISPLAY = "sensor.den_display"
+REAL = f"sensor.{DEV}_current_path"   # the page the display is really on; View Assist's current_path misses tabs opened by touch
 PRESENCE = f"binary_sensor.{DEV}_motion"
 SATELLITE = f"assist_satellite.{DEV}"
 BLACK = f"switch.{DEV}_screen_saver"        # VACA's own black overlay (not used here; cleared in case someone turned it on)
@@ -184,21 +185,24 @@ saver = {
         {"if": [{"condition": "template", "value_template": f"{{{{ not ({ON_SAVER}) }}}}"}],
          "then": [
              {"action": "input_text.set_value", "target": {"entity_id": RETURN},
-              "data": {"value": f"{{{{ {PATH} or '{HOME}' }}}}"}}]},
+              "data": {"value": f"{{% set real = states('{REAL}') %}}"
+                                f"{{{{ real if real.startswith('/smart-display/') and real != '{SAVER}' else '{HOME}' }}}}"}}]},
         # revert_timeout 0: View Assist leaves this view alone instead of going home after its view
-        # timeout. Sent even when the saver is already up, because a camera takeover that hands the
-        # screen back to it does so with the normal timeout, and this cancels that.
+        # timeout. Sent even when the saver is already up (picked up again after a camera takeover
+        # handed the screen back, or after a restart).
         {"action": "view_assist.navigate", "data": {"device": DISPLAY, "path": SAVER, "revert_timeout": 0}},
         # The saver has to be visible: VACA's black overlay off, backlight on automatic.
         {"action": "switch.turn_off", "target": {"entity_id": BLACK}},
         {"action": "switch.turn_on", "target": {"entity_id": AUTO_BRIGHTNESS}},
         {"wait_for_trigger": STOP},
-        # Still on the saver: nothing else took the screen, so go back to where it was.
+        # Still on the saver: nothing else took the screen, so go back to where it was. revert_timeout 0
+        # here too, or View Assist would send any view but its home screen home after its view timeout.
         {"if": [{"condition": "template", "value_template": f"{{{{ {ON_SAVER} }}}}"}],
          "then": [{"action": "view_assist.navigate",
                    "data": {"device": DISPLAY,
                             "path": f"{{% set p = states('{RETURN}') %}}"
-                                    f"{{{{ p if p.startswith('/') and p != '{SAVER}' and '{TAKEOVER}' not in p else '{HOME}' }}}}"}}]},
+                                    f"{{{{ p if p.startswith('/') and p != '{SAVER}' and '{TAKEOVER}' not in p else '{HOME}' }}}}",
+                            "revert_timeout": 0}}]},
     ],
     "mode": "single", "max_exceeded": "silent",
 }
